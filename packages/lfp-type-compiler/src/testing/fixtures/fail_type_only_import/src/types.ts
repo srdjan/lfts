@@ -1,0 +1,1 @@
+export type A = { x: number };

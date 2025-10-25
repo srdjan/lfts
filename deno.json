@@ -1,0 +1,11 @@
+{
+  "tasks": {
+    "build": "deno run -A packages/lfp-type-compiler/src/cli.ts deno_example/src --outDir dist",
+    "start": "deno run -A dist/main.js",
+    "test": "deno test -A packages/lfp-type-compiler/src/testing/golden.ts",
+    "demo": "deno run -A demo_cli/src/app.ts",
+    "test:app": "deno test -A demo_cli/tests/e2e.test.ts",
+    "test:app:all": "deno test -A demo_cli/tests/e2e.test.ts demo_cli/tests/e2e_negative.test.ts",
+    "release": "deno run -A packages/release/src/release.ts"
+  }
+}

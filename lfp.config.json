@@ -1,0 +1,21 @@
+{
+  "rules": {
+    "port-interface": {
+      "enabled": true,
+      "suffixes": [
+        "Port",
+        "Capability"
+      ],
+      "portDirs": [
+        "deno_example/src/ports"
+      ],
+      "requireTag": false
+    },
+    "ports-not-in-data": {
+      "enabled": true
+    },
+    "data-no-functions": {
+      "enabled": true
+    }
+  }
+}
