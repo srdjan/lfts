@@ -1,0 +1,249 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+This is a **Light-FP TypeScript compiler** (Iteration 1) that enforces a minimal functional programming subset and compiles `typeOf<T>()` calls into Deepkit-compatible bytecode literals. The compiler performs three passes:
+
+1. **Gate pass** - Rejects disallowed syntax (OOP constructs, decorators, mapped/conditional types)
+2. **Policy pass** - Enforces semantic rules (ports discipline, data-only schemas, canonical forms)
+3. **Transform pass** - Rewrites `typeOf<T>()` → bytecode literals
+
+## Development Commands
+
+```bash
+# Build the example project (runs full compiler pipeline)
+deno task build
+
+# Run the compiled output
+deno task start
+
+# Run compiler golden tests
+deno task test
+
+# Run demo CLI application
+deno task demo
+
+# Run demo app tests
+deno task test:app
+deno task test:app:all
+
+# Create release package
+deno task release
+```
+
+## Architecture
+
+### Package Structure
+
+- **`packages/lfp-type-spec/`** - Bytecode opcodes (`Op` enum) and encoding helpers
+- **`packages/lfp-type-compiler/`** - Main compiler with three passes:
+  - `gate/` - Syntax gating (bans OOP, decorators, advanced TS features)
+  - `policy/` - Semantic rules enforcement via pluggable rules
+  - `transform/` - AST transformers for `typeOf<T>()` and schema-root rewriting
+- **`packages/lfp-type-runtime/`** - Runtime validator using bytecode (thin wrapper around @deepkit/type concepts)
+- **`deno_example/`** - Minimal working example
+- **`demo_cli/`** - Full CLI app demonstrating all LFP patterns
+
+### Compiler Pipeline
+
+The compiler entry point is [packages/lfp-type-compiler/src/compiler.ts](packages/lfp-type-compiler/src/compiler.ts):
+
+1. **Gate** ([gate/gate.ts](packages/lfp-type-compiler/src/gate/gate.ts)) - Walks AST to ban:
+   - OOP: `class`, `extends`, `implements`, `constructor`, `new`, `super`, `this`
+   - Decorators (legacy or TC39)
+   - Advanced types: mapped, conditional, template-literal, `keyof`, indexed access, recursive types
+
+2. **Policy** ([policy/engine.ts](packages/lfp-type-compiler/src/policy/engine.ts)) - Runs pluggable rules in `policy/rules/`:
+   - Port discipline (LFP1001, LFP1002, LFP1012)
+   - Data purity (LFP1003)
+   - ADT correctness (LFP1006, LFP1007)
+   - Canonical syntax enforcement (LFP1008-LFP1016)
+
+3. **Transform** ([transform/typeOf-rewriter.ts](packages/lfp-type-compiler/src/transform/typeOf-rewriter.ts)) - Replaces `typeOf<T>()` with bytecode literals
+
+### Policy Rules System
+
+Rules live in `packages/lfp-type-compiler/src/policy/rules/`. Each rule exports a `Rule` object with:
+- `meta` - Rule ID (LFP####), name, severity, description
+- `analyzeDeclaration?` - Called on declarations (interfaces, types)
+- `analyzeUsage?` - Called on all nodes
+
+To add a new rule:
+1. Create file in `policy/rules/my-rule.ts`
+2. Export rule object implementing `Rule` interface
+3. Import and push to `rules` array in [policy/context.ts](packages/lfp-type-compiler/src/policy/context.ts)
+
+### Bytecode Format
+
+Bytecode is represented as nested arrays. See [packages/lfp-type-spec/src/mod.ts](packages/lfp-type-spec/src/mod.ts) for opcodes and encoding helpers:
+
+- Primitives: `[Op.STRING]`, `[Op.NUMBER]`, etc.
+- Literals: `[Op.LITERAL, value]`
+- Arrays: `[Op.ARRAY, elementType]`
+- Tuples: `[Op.TUPLE, length, ...elementTypes]`
+- Objects: `[Op.OBJECT, propCount, Op.PROPERTY, name, isOptional, type, ...]`
+- Unions: `[Op.UNION, altCount, ...alternatives]`
+- Discriminated unions: `[Op.DUNION, tagKey, variantCount, tag1, schema1, tag2, schema2, ...]`
+- Readonly: `[Op.READONLY, innerType]`
+- Brand: `[Op.BRAND, tag, innerType]`
+
+### Runtime Validation
+
+The runtime ([packages/lfp-type-runtime/mod.ts](packages/lfp-type-runtime/mod.ts)) provides:
+- `typeOf<T>()` - Dev shim (replaced by compiler with bytecode)
+- `validate(schema, value)` - Validates value against bytecode schema
+- `serialize(schema, value)` - Currently just validates + identity
+- `match(value, cases)` - Exhaustive pattern matching for ADTs
+
+## Light-FP Language Rules
+
+### Canonical Syntax (Enforced by Compiler)
+
+**One way to express each concept:**
+
+- Data objects: `type` aliases only (LFP1008)
+- Optional properties: `prop?:` never `prop: T | undefined` (LFP1009)
+- Arrays: `T[]` never `Array<T>` (LFP1015)
+- Readonly arrays: `readonly T[]` never `ReadonlyArray<T>` (LFP1015)
+- Brands: `T & { readonly __brand: "Tag" }` never helper functions (LFP1010)
+- Nullability: no `null` in schemas, use `?` for absence (LFP1011)
+- Ports: method signatures only, no property functions (LFP1012)
+- Type imports: `import type` when type-only (LFP1013)
+- Assertions: no `as` in schema files (LFP1014)
+- `typeOf<T>()`: only in `*.schema.ts` files (LFP1016)
+
+### ADT Requirements
+
+- Discriminant must be `'type'` with string literal values (LFP1006)
+- All `match(value, cases)` calls must handle all variants exactly (LFP1007)
+
+### Schema Files (`*.schema.ts`)
+
+Two patterns for defining schemas:
+
+1. **Explicit** (pre-v0.2.0):
+   ```ts
+   import { typeOf } from "../packages/lfp-type-runtime/mod.ts";
+   import type { User } from "./types.ts";
+   export const User$ = typeOf<User>();
+   ```
+
+2. **Zero-exposure roots** (v0.2.0+):
+   ```ts
+   import type { User } from "./types.ts";
+   export type UserSchema = User; // compiler emits: export const User$ = [...]
+   ```
+
+### Ports/Capabilities Pattern
+
+Ports define dependency interfaces and must:
+- Be TypeScript interfaces (not types)
+- Have suffix `Port` or `Capability` (configurable in `lfp.config.json`)
+- Contain only method signatures (LFP1012)
+- Not appear in data schemas (LFP1002)
+
+Example:
+```ts
+// ports/storage.ts
+export interface StoragePort {
+  load(): Promise<Data>;
+  save(data: Data): Promise<void>;
+}
+```
+
+## Testing
+
+### Golden Tests
+
+Compiler tests use a golden test pattern in [packages/lfp-type-compiler/src/testing/golden.ts](packages/lfp-type-compiler/src/testing/golden.ts):
+
+- Test fixtures in `packages/lfp-type-compiler/src/testing/fixtures/`
+- Each fixture has `src/` directory and `test.json` with expected diagnostics
+- Naming: `ok_*` (should pass) or `fail_*` (should produce specific errors)
+
+To add a test:
+1. Create `fixtures/fail_my_test/src/a.ts` with test code
+2. Create `fixtures/fail_my_test/test.json`:
+   ```json
+   {
+     "expected": [
+       { "id": "LFP1234", "message": "partial match of error" }
+     ]
+   }
+   ```
+3. Run `deno task test`
+
+### Known Limitations
+
+See [VALIDATOR_GAPS.md](VALIDATOR_GAPS.md) for runtime validator limitations:
+- No recursive/self-referential types
+- No generics, mapped/conditional types
+- No refinements (min/max, regex, etc.)
+- First-failure only error reporting
+- No excess property checking
+
+## Configuration
+
+`lfp.config.json` configures policy rules:
+
+```json
+{
+  "rules": {
+    "port-interface": {
+      "enabled": true,
+      "suffixes": ["Port", "Capability"],
+      "portDirs": ["deno_example/src/ports"],
+      "requireTag": false
+    },
+    "ports-not-in-data": { "enabled": true },
+    "data-no-functions": { "enabled": true }
+  }
+}
+```
+
+## Important Patterns
+
+### Adding a New Policy Rule
+
+1. Create `packages/lfp-type-compiler/src/policy/rules/my-rule.ts`:
+   ```ts
+   import { Rule, RuleContext } from "../context.ts";
+
+   export const myRule: Rule = {
+     meta: {
+       id: "LFP1234",
+       name: "my-rule-name",
+       defaultSeverity: "error",
+       defaultOptions: {},
+       description: "Rule description"
+     },
+     analyzeUsage(node, ctx) {
+       // Check node and call ctx.report() on violations
+     }
+   };
+   ```
+
+2. Import and register in [packages/lfp-type-compiler/src/policy/context.ts](packages/lfp-type-compiler/src/policy/context.ts):
+   ```ts
+   import { myRule } from "./rules/my-rule.ts";
+   rules.push(..., myRule);
+   ```
+
+3. Add test fixture and run `deno task test`
+
+### Adding a New Bytecode Operation
+
+1. Add opcode to `Op` enum in [packages/lfp-type-spec/src/mod.ts](packages/lfp-type-spec/src/mod.ts)
+2. Add encoder helper to `enc` object
+3. Add validator case in [packages/lfp-type-runtime/mod.ts](packages/lfp-type-runtime/mod.ts) `validateWith()` function
+4. Add transformer logic in [packages/lfp-type-compiler/src/transform/typeOf-rewriter.ts](packages/lfp-type-compiler/src/transform/typeOf-rewriter.ts)
+
+## Language Specification
+
+Full spec in [LANG-SPEC.md](LANG-SPEC.md). Key points:
+
+- **Allowed**: primitives, arrays, tuples, objects, unions, readonly, intersections (for branding only)
+- **Disallowed**: classes, decorators, `this`, mapped/conditional types, generics (in schemas)
+- All policies enforced at compile time, not via linter
