@@ -1,4 +1,4 @@
-import { match, validate } from "../../packages/lfp-type-runtime/mod.ts";
+import { match, validate, validateSafe, type Result, type ValidationError } from "../../packages/lfp-type-runtime/mod.ts";
 import { systemClock } from "./src/ports/clock.ts";
 import { denoConsole } from "./src/ports/console.ts";
 import { fileStorage } from "./src/ports/storage.ts";
@@ -41,7 +41,10 @@ export function handleCommand(store: Store, clock: ClockPort, io: ConsolePort, s
       const next = new Map(store.tasks);
       next.set(id, validate(Task$, t));
       io.log(`added: ${id} ${t.name}`);
-      storage.save(JSON.stringify(validate(TaskList$, toTaskList({ tasks: next })), null, 2));
+      const saved = storage.save(JSON.stringify(validate(TaskList$, toTaskList({ tasks: next })), null, 2));
+      if (!saved) {
+        io.log("Warning: failed to persist tasks to storage");
+      }
       return { tasks: next };
     },
     list: () => {
@@ -59,7 +62,10 @@ export function handleCommand(store: Store, clock: ClockPort, io: ConsolePort, s
       const next = new Map(store.tasks);
       next.set(c.id, { ...t, completed: true });
       io.log(`completed: ${c.id}`);
-      storage.save(JSON.stringify(validate(TaskList$, toTaskList({ tasks: next })), null, 2));
+      const saved = storage.save(JSON.stringify(validate(TaskList$, toTaskList({ tasks: next })), null, 2));
+      if (!saved) {
+        io.log("Warning: failed to persist tasks to storage");
+      }
       return { tasks: next };
     },
     help: () => {
@@ -100,14 +106,23 @@ export function parseArgs(args: readonly string[]): Command {
   }
 }
 
-async function readJsonFromStdin(): Promise<Command | undefined> {
+async function readJsonFromStdin(io: ConsolePort): Promise<Command | undefined> {
   try {
     const buf = await Deno.readAll(Deno.stdin);
     const text = new TextDecoder().decode(buf).trim();
     if (text.length === 0) return undefined;
+
     const obj = JSON.parse(text);
-    return validate(Command$, obj as unknown);
-  } catch {
+    const result = validateSafe<Command>(Command$, obj);
+
+    if (!result.ok) {
+      io.log(`Invalid command JSON: ${result.error.message}`);
+      return undefined;
+    }
+
+    return result.value;
+  } catch (err) {
+    io.log(`Failed to parse JSON: ${err instanceof Error ? err.message : String(err)}`);
     return undefined;
   }
 }
@@ -122,7 +137,7 @@ if (import.meta.main) {
   const loaded = storage.load();
   let store: Store = loaded ? fromTaskList(JSON.parse(loaded)) : { tasks: new Map() };
 
-  const piped = await readJsonFromStdin();
+  const piped = await readJsonFromStdin(io);
   const cmd = piped ?? parseArgs(Deno.args);
   store = handleCommand(store, clock, io, storage, cmd);
 }

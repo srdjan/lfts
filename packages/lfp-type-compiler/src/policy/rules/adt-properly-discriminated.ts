@@ -1,24 +1,10 @@
 
 // packages/lfp-type-compiler/src/policy/rules/adt-properly-discriminated.ts
 import ts from "npm:typescript";
-import { Rule } from "../context.ts";
+import { Rule, resolveTypeLiteralNode } from "../context.ts";
 
 // Hard requirement: discriminant key must be exactly 'type', string-literal, unique per variant.
 const TAG = "type";
-
-function resolveTypeLiteralNode(node: ts.TypeNode, checker: ts.TypeChecker): ts.TypeLiteralNode | null {
-  if (ts.isTypeLiteralNode(node)) return node;
-  if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)) {
-    const sym = checker.getSymbolAtLocation(node.typeName);
-    if (sym && sym.declarations && sym.declarations.length > 0) {
-      const decl = sym.declarations[0];
-      if (ts.isTypeAliasDeclaration(decl) && ts.isTypeLiteralNode(decl.type)) {
-        return decl.type;
-      }
-    }
-  }
-  return null;
-}
 
 function isObjectLikeUnion(node: ts.UnionTypeNode, checker: ts.TypeChecker): boolean {
   // Object-like if every alternative resolves to a type literal

@@ -29,24 +29,48 @@ export interface Rule<Opts = unknown> {
   analyzeUsage?(node: ts.Node, ctx: RuleContext<Opts>): void;
 }
 
-const diagnostics: ts.Diagnostic[] = [];
-const portSet = new Set<ts.Symbol>();
+// Policy state encapsulated within context (not module-level globals)
+type PolicyState = {
+  diagnostics: ts.Diagnostic[];
+  portSet: Set<ts.Symbol>;
+};
 
 export function createContext(program: ts.Program, checker: ts.TypeChecker) {
   const cfg = readConfig();
+
+  // Create isolated state for this compilation run
+  const state: PolicyState = {
+    diagnostics: [],
+    portSet: new Set<ts.Symbol>(),
+  };
+
   const ctx: RuleContext = {
-    program, checker, options: cfg,
+    program,
+    checker,
+    options: cfg,
     report(node, message) {
       const sf = node.getSourceFile();
-      diagnostics.push({ category: ts.DiagnosticCategory.Error, code: 1, file: sf, start: node.getStart(), length: node.getWidth(), messageText: message + "\n" + formatCodeFrame(sf, node.getStart(), node.getWidth()) });
+      state.diagnostics.push({
+        category: ts.DiagnosticCategory.Error,
+        code: 1,
+        file: sf,
+        start: node.getStart(),
+        length: node.getWidth(),
+        messageText: message + "\n" + formatCodeFrame(sf, node.getStart(), node.getWidth())
+      });
     },
     classify: {
-      markPort(sym) { portSet.add(sym); },
-      isPort(sym) { return portSet.has(sym); },
+      markPort(sym) { state.portSet.add(sym); },
+      isPort(sym) { return state.portSet.has(sym); },
     }
   };
+
   return Object.assign(ctx, {
-    flush: () => diagnostics.splice(0, diagnostics.length),
+    flush: () => {
+      const diags = [...state.diagnostics];
+      state.diagnostics.length = 0;
+      return diags;
+    },
   });
 }
 
@@ -98,4 +122,19 @@ export function isTypeOfCall(node: ts.Node): node is ts.CallExpression {
   if (!ts.isCallExpression(node)) return false;
   const expr = node.expression;
   return ts.isIdentifier(expr) && expr.text === "typeOf" && node.typeArguments?.length === 1;
+}
+
+// ADT helper: resolve a type node to its underlying type literal
+export function resolveTypeLiteralNode(node: ts.TypeNode, checker: ts.TypeChecker): ts.TypeLiteralNode | null {
+  if (ts.isTypeLiteralNode(node)) return node;
+  if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)) {
+    const sym = checker.getSymbolAtLocation(node.typeName);
+    if (sym && sym.declarations && sym.declarations.length > 0) {
+      const decl = sym.declarations[0];
+      if (ts.isTypeAliasDeclaration(decl) && ts.isTypeLiteralNode(decl.type)) {
+        return decl.type;
+      }
+    }
+  }
+  return null;
 }

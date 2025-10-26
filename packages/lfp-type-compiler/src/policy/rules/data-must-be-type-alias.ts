@@ -13,33 +13,30 @@ export const dataMustBeTypeAliasRule: Rule = {
   analyzeUsage(node, ctx) {
     if (!isTypeOfCall(node)) return;
     const T = node.typeArguments![0];
+
     function check(n: ts.TypeNode) {
       if (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName)) {
-        const sym = ctx.checker.getSymbolAtLocation(n.typeName); // Quick fix: convert to
-// type Foo = { /* members */ }
-
+        const sym = ctx.checker.getSymbolAtLocation(n.typeName);
         if (!sym) return;
+
         const decls = sym.getDeclarations() ?? [];
         for (const d of decls) {
           if (ts.isInterfaceDeclaration(d)) {
             if (!ctx.classify.isPort(sym)) {
-              ctx.report(n, `LFP1008: Interface '${sym.getName()}' used in data schema. Use a \`type\` alias instead.`); // Quick fix: convert to
-// type Foo = { /* members */ }
-
+              ctx.report(n, `LFP1008: Interface '${sym.getName()}' used in data schema. Use a \`type\` alias instead.`);
             }
           }
         }
       }
     }
-    const visit = (n: ts.Node) => { if (ts.isTypeNode(n)) check(n); // Quick fix: convert to
-// type Foo = { /* members */ }
- };
-    ts.forEachChild(T, function recur(n){ visit(n); // Quick fix: convert to
-// type Foo = { /* members */ }
- ts.forEachChild(n, recur); // Quick fix: convert to
-// type Foo = { /* members */ }
- }); // Quick fix: convert to
-// type Foo = { /* members */ }
 
+    const visit = (n: ts.Node) => {
+      if (ts.isTypeNode(n)) check(n);
+    };
+
+    ts.forEachChild(T, function recur(n) {
+      visit(n);
+      ts.forEachChild(n, recur);
+    });
   }
 };

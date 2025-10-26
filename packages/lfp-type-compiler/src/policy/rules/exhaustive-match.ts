@@ -1,23 +1,9 @@
 // packages/lfp-type-compiler/src/policy/rules/exhaustive-match.ts
 import ts from "npm:typescript";
-import { Rule } from "../context.ts";
+import { Rule, resolveTypeLiteralNode } from "../context.ts";
 import { formatCodeFrame } from "../../diag.ts";
 
 const TAG = "type";
-
-function resolveTypeLiteralNode(node: ts.TypeNode, checker: ts.TypeChecker): ts.TypeLiteralNode | null {
-  if (ts.isTypeLiteralNode(node)) return node;
-  if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)) {
-    const sym = checker.getSymbolAtLocation(node.typeName);
-    if (sym && sym.declarations && sym.declarations.length > 0) {
-      const decl = sym.declarations[0];
-      if (ts.isTypeAliasDeclaration(decl) && ts.isTypeLiteralNode(decl.type)) {
-        return decl.type;
-      }
-    }
-  }
-  return null;
-}
 
 function unionIsADT(node: ts.TypeNode, checker: ts.TypeChecker): { tags: string[] } | null {
   if (!ts.isUnionTypeNode(node)) return null;

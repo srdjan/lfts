@@ -11,10 +11,24 @@ export function typeOf<T>(): any {
 
 export type TypeObject = unknown;
 
+// Result type for functional error handling
+export type Result<T, E> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly error: E };
+
+// Validation error with path context
+export type ValidationError = {
+  readonly path: string;
+  readonly message: string;
+};
+
 function isBC(x: unknown): x is any[] { return Array.isArray(x); }
 
 class VError extends Error {
-  constructor(public path: string, msg: string) { super(path ? `${path}: ${msg}` : msg); }
+  constructor(public readonly path: string, msg: string) {
+    super(path ? `${path}: ${msg}` : msg);
+    this.name = 'ValidationError';
+  }
 }
 
 function pathJoin(base: string, seg: string | number): string {
@@ -22,7 +36,13 @@ function pathJoin(base: string, seg: string | number): string {
   return typeof seg === "number" ? `${base}[${seg}]` : `${base}.${seg}`;
 }
 
-function validateWith(bc: any[], value: unknown, path = ""): void {
+const MAX_DEPTH = 100;
+
+function validateWith(bc: any[], value: unknown, path = "", depth = 0): void {
+  if (depth > MAX_DEPTH) {
+    throw new VError(path, `maximum nesting depth (${MAX_DEPTH}) exceeded`);
+  }
+
   const op = bc[0];
   switch (op) {
     case Op.STRING:
@@ -48,7 +68,7 @@ function validateWith(bc: any[], value: unknown, path = ""): void {
     case Op.ARRAY: {
       const elemT = bc[1];
       if (!Array.isArray(value)) throw new VError(path, `expected array`);
-      for (let i = 0; i < value.length; i++) validateWith(elemT, value[i], pathJoin(path, i));
+      for (let i = 0; i < value.length; i++) validateWith(elemT, value[i], pathJoin(path, i), depth + 1);
       return;
     }
     case Op.TUPLE: {
@@ -57,7 +77,7 @@ function validateWith(bc: any[], value: unknown, path = ""): void {
       if (value.length !== n) throw new VError(path, `expected tuple length ${n}, got ${value.length}`);
       for (let i = 0; i < n; i++) {
         const eltT = bc[2 + i];
-        validateWith(eltT, value[i], pathJoin(path, i));
+        validateWith(eltT, value[i], pathJoin(path, i), depth + 1);
       }
       return;
     }
@@ -73,7 +93,7 @@ function validateWith(bc: any[], value: unknown, path = ""): void {
         const t = bc[idx++];
         if (Object.prototype.hasOwnProperty.call(value as object, name)) {
           // @ts-ignore
-          validateWith(t, (value as any)[name], pathJoin(path, name));
+          validateWith(t, (value as any)[name], pathJoin(path, name), depth + 1);
         } else if (!optional) {
           throw new VError(pathJoin(path, name), `required property missing`);
         }
@@ -89,7 +109,7 @@ function validateWith(bc: any[], value: unknown, path = ""): void {
       for (let i = 0; i < n; i++) {
         const tag = bc[3 + 2*i] as string;
         const schema = bc[3 + 2*i + 1] as any[];
-        if (vTag === tag) { validateWith(schema, value, path); return; }
+        if (vTag === tag) { validateWith(schema, value, path, depth + 1); return; }
       }
       const expected = [...Array(n).keys()].map(i => bc[3+2*i]);
       throw new VError(pathJoin(path, tagKey), `unexpected tag ${JSON.stringify(vTag)}; expected one of: ${expected.map(x=>JSON.stringify(x)).join(", ")}`);
@@ -98,7 +118,7 @@ function validateWith(bc: any[], value: unknown, path = ""): void {
       const n = bc[1] as number;
       for (let i = 0; i < n; i++) {
         try {
-          validateWith(bc[2 + i], value, path);
+          validateWith(bc[2 + i], value, path, depth + 1);
           return; // one alternative matched
         } catch (_) { /* continue */ }
       }
@@ -106,14 +126,14 @@ function validateWith(bc: any[], value: unknown, path = ""): void {
     }
     case Op.READONLY: {
       const inner = bc[1];
-      validateWith(inner, value, path);
+      validateWith(inner, value, path, depth + 1);
       // we don't enforce immutability at runtime in MVP
       return;
     }
     case Op.BRAND: {
       const _tag = bc[1];
       const inner = bc[2];
-      validateWith(inner, value, path);
+      validateWith(inner, value, path, depth + 1);
       return;
     }
     default:
@@ -133,10 +153,38 @@ function assertBytecode(t: any): asserts t is any[] {
 
 export function decode(bc: unknown): TypeObject { return bc as any[]; }
 
+/**
+ * Validate a value against a schema (throws on error)
+ * @param t - Bytecode schema
+ * @param value - Value to validate
+ * @returns The validated value (for chaining)
+ * @throws VError if validation fails
+ */
 export function validate(t: TypeObject, value: unknown) {
   assertBytecode(t);
   validateWith(t as any[], value, "");
   return value; // if valid, return value
+}
+
+/**
+ * Validate a value against a schema (returns Result)
+ * Functional alternative to validate() that returns success/error instead of throwing
+ * @param t - Bytecode schema
+ * @param value - Value to validate
+ * @returns Result<T, ValidationError> with either the validated value or error details
+ */
+export function validateSafe<T>(t: TypeObject, value: unknown): Result<T, ValidationError> {
+  assertBytecode(t);
+  try {
+    validateWith(t as any[], value, "");
+    return { ok: true, value: value as T };
+  } catch (err) {
+    if (err instanceof VError) {
+      return { ok: false, error: { path: err.path, message: err.message } };
+    }
+    // Unexpected errors (e.g., corrupt bytecode)
+    return { ok: false, error: { path: "", message: String(err) } };
+  }
 }
 
 export function serialize(t: TypeObject, value: unknown) {
