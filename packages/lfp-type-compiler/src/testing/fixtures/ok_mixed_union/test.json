@@ -1,6 +1,3 @@
 {
-  "expect": "error",
-  "codes": [
-    "LFP1006"
-  ]
+  "expect": "ok"
 }

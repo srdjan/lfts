@@ -1,6 +1,6 @@
 // LFP1009: Forbid `T | undefined` on object properties in schemas. Use `prop?: T` instead.
 import ts from "npm:typescript";
-import { Rule, isTypeOfCall } from "../context.ts";
+import { Rule, isTypeOfCall, resolveTypeAlias } from "../context.ts";
 
 export const noUndefinedUnionInPropRule: Rule = {
   meta: {
@@ -12,7 +12,7 @@ export const noUndefinedUnionInPropRule: Rule = {
   },
   analyzeUsage(node, ctx) {
     if (!isTypeOfCall(node)) return;
-    const T = node.typeArguments![0];
+    const T = resolveTypeAlias(node.typeArguments![0], ctx.checker);
     function checkTypeLiteral(lit: ts.TypeLiteralNode) {
       for (const m of lit.members) {
         if (!ts.isPropertySignature(m) || !m.type) continue;

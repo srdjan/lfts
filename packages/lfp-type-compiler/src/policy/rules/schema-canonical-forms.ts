@@ -1,6 +1,6 @@
 // LFP1015: Enforce canonical forms in schemas (arrays, readonly arrays, Readonly<...>, boolean unions).
 import ts from "npm:typescript";
-import { Rule, isTypeOfCall } from "../context.ts";
+import { Rule, isTypeOfCall, resolveTypeAlias } from "../context.ts";
 
 export const schemaCanonicalFormsRule: Rule = {
   meta: {
@@ -12,7 +12,7 @@ export const schemaCanonicalFormsRule: Rule = {
   },
   analyzeUsage(node, ctx) {
     if (!isTypeOfCall(node)) return;
-    const T = node.typeArguments![0];
+    const T = resolveTypeAlias(node.typeArguments![0], ctx.checker);
     function walk(n: ts.Node) {
       if (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName)) {
         const name = n.typeName.text;

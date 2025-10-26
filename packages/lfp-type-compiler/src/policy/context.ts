@@ -80,7 +80,32 @@ import { portsNotInDataRule } from "./rules/ports-not-in-data.ts";
 import { dataNoFunctionsRule } from "./rules/data-no-functions.ts";
 import { adtProperlyDiscriminatedRule } from "./rules/adt-properly-discriminated.ts";
 import { exhaustiveMatchRule } from "./rules/exhaustive-match.ts";
-rules.push(portInterfaceRule, portsNotInDataRule, dataNoFunctionsRule, adtProperlyDiscriminatedRule, exhaustiveMatchRule);
+import { dataMustBeTypeAliasRule } from "./rules/data-must-be-type-alias.ts";
+import { noBrandHelperRule } from "./rules/no-brand-helper.ts";
+import { noNullInSchemasRule } from "./rules/no-null-in-schemas.ts";
+import { schemaCanonicalFormsRule } from "./rules/schema-canonical-forms.ts";
+import { noUndefinedUnionInPropRule } from "./rules/no-undefined-union-in-prop.ts";
+import { typeOfOnlyInSchemaFilesRule } from "./rules/typeOf-only-in-schema-files.ts";
+import { portMethodSignaturesOnlyRule } from "./rules/port-method-signatures-only.ts";
+import { typeOnlyImportsRule } from "./rules/type-only-imports.ts";
+import { noAsAssertionsInSchemaFilesRule } from "./rules/no-as-assertions-in-schema-files.ts";
+
+rules.push(
+  portInterfaceRule,
+  portsNotInDataRule,
+  dataNoFunctionsRule,
+  adtProperlyDiscriminatedRule,
+  exhaustiveMatchRule,
+  dataMustBeTypeAliasRule,
+  noBrandHelperRule,
+  noNullInSchemasRule,
+  schemaCanonicalFormsRule,
+  noUndefinedUnionInPropRule,
+  typeOfOnlyInSchemaFilesRule,
+  portMethodSignaturesOnlyRule,
+  typeOnlyImportsRule,
+  noAsAssertionsInSchemaFilesRule
+);
 
 
 // schema helpers
@@ -124,17 +149,28 @@ export function isTypeOfCall(node: ts.Node): node is ts.CallExpression {
   return ts.isIdentifier(expr) && expr.text === "typeOf" && node.typeArguments?.length === 1;
 }
 
-// ADT helper: resolve a type node to its underlying type literal
-export function resolveTypeLiteralNode(node: ts.TypeNode, checker: ts.TypeChecker): ts.TypeLiteralNode | null {
-  if (ts.isTypeLiteralNode(node)) return node;
+/**
+ * Resolve a type reference to the underlying type node.
+ * If node is a type reference to a type alias, returns the aliased type node.
+ * Otherwise returns the node itself.
+ */
+export function resolveTypeAlias(node: ts.TypeNode, checker: ts.TypeChecker): ts.TypeNode {
   if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)) {
     const sym = checker.getSymbolAtLocation(node.typeName);
     if (sym && sym.declarations && sym.declarations.length > 0) {
       const decl = sym.declarations[0];
-      if (ts.isTypeAliasDeclaration(decl) && ts.isTypeLiteralNode(decl.type)) {
+      if (ts.isTypeAliasDeclaration(decl)) {
         return decl.type;
       }
     }
   }
+  return node;
+}
+
+// ADT helper: resolve a type node to its underlying type literal
+export function resolveTypeLiteralNode(node: ts.TypeNode, checker: ts.TypeChecker): ts.TypeLiteralNode | null {
+  if (ts.isTypeLiteralNode(node)) return node;
+  const resolved = resolveTypeAlias(node, checker);
+  if (ts.isTypeLiteralNode(resolved)) return resolved;
   return null;
 }

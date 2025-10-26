@@ -34,6 +34,9 @@ export const dataMustBeTypeAliasRule: Rule = {
       if (ts.isTypeNode(n)) check(n);
     };
 
+    // Check T itself first
+    visit(T);
+    // Then check all children recursively
     ts.forEachChild(T, function recur(n) {
       visit(n);
       ts.forEachChild(n, recur);
