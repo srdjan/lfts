@@ -1,5 +1,3 @@
-import { typeOf } from "../../packages/lfp-type-runtime/mod.ts";
-
 /** @port */
 export interface ClockPort {
   now(): number;

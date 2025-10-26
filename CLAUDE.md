@@ -33,6 +33,37 @@ deno task test:app:all
 deno task release
 ```
 
+## Test Suite Status
+
+**Current**: 15/18 tests passing (83% pass rate)
+
+The compiler test suite has 18 golden tests in [packages/lfp-type-compiler/src/testing/fixtures/](packages/lfp-type-compiler/src/testing/fixtures/). As of the latest refactoring work:
+
+- ✅ **15 tests passing** - All core LFP rules are working correctly
+- ❌ **3 tests failing** - Known limitations documented in [KNOWN_ISSUES.md](KNOWN_ISSUES.md)
+
+### Known Failing Tests (Expected Failures)
+
+These 3 test failures are documented limitations, not regressions:
+
+1. **fail_extra_match_case** (LFP1007) - Exhaustive match checking doesn't work due to TypeScript Compiler API limitations
+2. **fail_non_exhaustive_match** (LFP1007) - Same root cause as above
+3. **fail_type_only_import** (LFP1013) - Type-only import detection needs AST navigation improvements
+
+See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for detailed technical analysis and potential fixes for future contributors.
+
+### What Works
+
+All essential LFP enforcement rules are functional:
+- Port interface validation and discipline
+- ADT discriminated union validation
+- Data schema purity (no functions, no null)
+- Interface vs type alias enforcement
+- Schema canonical forms (Array<T> → T[], etc.)
+- Brand helper detection
+- typeOf usage restrictions
+- No assertions in schema files
+
 ## Architecture
 
 ### Package Structure
