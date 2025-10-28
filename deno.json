@@ -9,6 +9,10 @@
     "demo": "deno run -A demo_cli/src/app.ts",
     "test:app": "deno test -A demo_cli/tests/e2e.test.ts",
     "test:app:all": "deno test -A demo_cli/tests/e2e.test.ts demo_cli/tests/e2e_negative.test.ts",
-    "release": "deno run -A packages/release/src/release.ts"
+    "release": "deno run -A packages/release/src/release.ts",
+    "todo:build": "deno run -A packages/lfp-type-compiler/src/cli.ts todo_api/domain --outDir todo_api/dist",
+    "todo:serve": "deno run -A todo_api/main.ts",
+    "todo:dev": "deno task todo:build && deno run -A --watch=todo_api todo_api/main.ts",
+    "todo:test": "deno test -A todo_api/tests/task.test.ts"
   }
 }
