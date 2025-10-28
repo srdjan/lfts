@@ -1,6 +1,7 @@
 // packages/lfp-type-compiler/src/transform/type-encoder.ts
 // Shared type encoding logic for transformers
 import ts from "npm:typescript";
+import { match as patternMatch } from "ts-pattern";
 import { Op, enc, type Bytecode } from "../../../lfp-type-spec/src/mod.ts";
 
 /**
@@ -100,76 +101,73 @@ function tryEncodeDiscriminatedUnion(node: ts.UnionTypeNode): Bytecode | null {
 
 /**
  * Encode a TypeScript type node into LFP bytecode
+ * Uses ts-pattern for cleaner pattern matching
  * @param node - TypeScript type node to encode
  * @returns Bytecode array representation
  */
 export function encodeType(node: ts.TypeNode): Bytecode {
-  switch (node.kind) {
-    case ts.SyntaxKind.NumberKeyword:
-      return enc.num();
-    case ts.SyntaxKind.StringKeyword:
-      return enc.str();
-    case ts.SyntaxKind.BooleanKeyword:
-      return enc.bool();
-    case ts.SyntaxKind.NullKeyword:
-      return enc.nul();
-    case ts.SyntaxKind.UndefinedKeyword:
-      return enc.und();
+  return patternMatch<ts.SyntaxKind, Bytecode>(node.kind)
+    .with(ts.SyntaxKind.NumberKeyword, () => enc.num())
+    .with(ts.SyntaxKind.StringKeyword, () => enc.str())
+    .with(ts.SyntaxKind.BooleanKeyword, () => enc.bool())
+    .with(ts.SyntaxKind.NullKeyword, () => enc.nul())
+    .with(ts.SyntaxKind.UndefinedKeyword, () => enc.und())
+    .with(ts.SyntaxKind.LiteralType, () => encodeLiteralType(node as ts.LiteralTypeNode))
+    .with(ts.SyntaxKind.ArrayType, () => enc.arr(encodeType((node as ts.ArrayTypeNode).elementType)))
+    .with(ts.SyntaxKind.TupleType, () => encodeTupleType(node as ts.TupleTypeNode))
+    .with(ts.SyntaxKind.TypeLiteral, () => encodeTypeLiteral(node as ts.TypeLiteralNode))
+    .with(ts.SyntaxKind.UnionType, () => encodeUnionType(node as ts.UnionTypeNode))
+    .with(ts.SyntaxKind.ParenthesizedType, () => encodeType((node as ts.ParenthesizedTypeNode).type))
+    .with(ts.SyntaxKind.IntersectionType, () => encodeIntersectionType(node as ts.IntersectionTypeNode))
+    .with(ts.SyntaxKind.TypeReference, () => encodeTypeReference(node as ts.TypeReferenceNode))
+    .otherwise(() => [Op.LITERAL, "/*unsupported*/"]);
+}
 
-    case ts.SyntaxKind.LiteralType: {
-      const lit = (node as ts.LiteralTypeNode).literal;
-      if (ts.isNumericLiteral(lit)) return enc.lit(Number(lit.text));
-      if (ts.isStringLiteral(lit)) return enc.lit(lit.text);
-      if (lit.kind === ts.SyntaxKind.TrueKeyword) return enc.lit(true);
-      if (lit.kind === ts.SyntaxKind.FalseKeyword) return enc.lit(false);
-      return enc.lit(String(lit.getText()));
-    }
+// Helper functions for complex encoding cases (extracted for clarity)
 
-    case ts.SyntaxKind.ArrayType:
-      return enc.arr(encodeType((node as ts.ArrayTypeNode).elementType));
+function encodeLiteralType(node: ts.LiteralTypeNode): Bytecode {
+  const lit = node.literal;
+  if (ts.isNumericLiteral(lit)) return enc.lit(Number(lit.text));
+  if (ts.isStringLiteral(lit)) return enc.lit(lit.text);
+  if (lit.kind === ts.SyntaxKind.TrueKeyword) return enc.lit(true);
+  if (lit.kind === ts.SyntaxKind.FalseKeyword) return enc.lit(false);
+  return enc.lit(String(lit.getText()));
+}
 
-    case ts.SyntaxKind.TupleType: {
-      const elts = (node as ts.TupleTypeNode).elements.map(encodeType);
-      return enc.tup(...elts);
-    }
+function encodeTupleType(node: ts.TupleTypeNode): Bytecode {
+  const elts = node.elements.map(encodeType);
+  return enc.tup(...elts);
+}
 
-    case ts.SyntaxKind.TypeLiteral: {
-      const tl = node as ts.TypeLiteralNode;
-      const props = tl.members
-        .filter((m): m is ts.PropertySignature => ts.isPropertySignature(m) && !!m.type && !!m.name)
-        .map(m => ({
-          name: getPropName(m.name!),
-          type: encodeType(m.type!),
-          optional: !!m.questionToken,
-        }));
-      return enc.obj(props);
-    }
+function encodeTypeLiteral(node: ts.TypeLiteralNode): Bytecode {
+  const props = node.members
+    .filter((m): m is ts.PropertySignature => ts.isPropertySignature(m) && !!m.type && !!m.name)
+    .map(m => ({
+      name: getPropName(m.name!),
+      type: encodeType(m.type!),
+      optional: !!m.questionToken,
+    }));
+  return enc.obj(props);
+}
 
-    case ts.SyntaxKind.UnionType: {
-      const unionNode = node as ts.UnionTypeNode;
-      const dunion = tryEncodeDiscriminatedUnion(unionNode);
-      if (dunion) return dunion;
-      return enc.union(...unionNode.types.map(encodeType));
-    }
+function encodeUnionType(node: ts.UnionTypeNode): Bytecode {
+  // Try discriminated union optimization first
+  const dunion = tryEncodeDiscriminatedUnion(node);
+  if (dunion) return dunion;
+  // Fall back to regular union
+  return enc.union(...node.types.map(encodeType));
+}
 
-    case ts.SyntaxKind.ParenthesizedType:
-      return encodeType((node as ts.ParenthesizedTypeNode).type);
+function encodeIntersectionType(node: ts.IntersectionTypeNode): Bytecode {
+  // Try brand pattern detection
+  const branded = tryEncodeBrand(node);
+  if (branded) return branded.bc;
+  // In Iteration-1, other intersections are not supported by gate/policy
+  return [Op.LITERAL, "/*unsupported intersection*/"];
+}
 
-    case ts.SyntaxKind.IntersectionType: {
-      const branded = tryEncodeBrand(node as ts.IntersectionTypeNode);
-      if (branded) return branded.bc;
-      // In Iteration-1, other intersections are not supported by gate/policy.
-      return [Op.LITERAL, "/*unsupported intersection*/"];
-    }
-
-    case ts.SyntaxKind.TypeReference: {
-      // Strict Iteration-1: treat unknown references as literal markers to keep emit deterministic.
-      const tr = node as ts.TypeReferenceNode;
-      const name = ts.isIdentifier(tr.typeName) ? tr.typeName.text : tr.typeName.getText();
-      return [Op.LITERAL, name];
-    }
-
-    default:
-      return [Op.LITERAL, "/*unsupported*/"];
-  }
+function encodeTypeReference(node: ts.TypeReferenceNode): Bytecode {
+  // Strict Iteration-1: treat unknown references as literal markers to keep emit deterministic
+  const name = ts.isIdentifier(node.typeName) ? node.typeName.text : node.typeName.getText();
+  return [Op.LITERAL, name];
 }
