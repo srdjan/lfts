@@ -1,4 +1,7 @@
 {
+  "imports": {
+    "ts-pattern": "npm:ts-pattern@^5.0.0"
+  },
   "tasks": {
     "build": "deno run -A packages/lfp-type-compiler/src/cli.ts deno_example/src --outDir dist",
     "start": "deno run -A dist/main.js",

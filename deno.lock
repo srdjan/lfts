@@ -1,9 +1,13 @@
 {
   "version": "5",
   "specifiers": {
+    "npm:ts-pattern@5": "5.8.0",
     "npm:typescript@*": "5.9.2"
   },
   "npm": {
+    "ts-pattern@5.8.0": {
+      "integrity": "sha512-kIjN2qmWiHnhgr5DAkAafF9fwb0T5OhMVSWrm8XEdTFnX6+wfXwYOFjeF86UZ54vduqiR7BfqScFmXSzSaH8oA=="
+    },
     "typescript@5.9.2": {
       "integrity": "sha512-CWBzXQrc/qOkhidw1OzBTQuYRbfyxDXJMVJ1XNwUHGROVmuaeiEm3OslpZ1RV96d7SKKjZKrSJu3+t/xlw3R9A==",
       "bin": true
@@ -18,5 +22,10 @@
     "https://deno.land/std@0.224.0/internal/diff.ts": "6234a4b493ebe65dc67a18a0eb97ef683626a1166a1906232ce186ae9f65f4e6",
     "https://deno.land/std@0.224.0/internal/format.ts": "0a98ee226fd3d43450245b1844b47003419d34d210fa989900861c79820d21c2",
     "https://deno.land/std@0.224.0/internal/mod.ts": "534125398c8e7426183e12dc255bb635d94e06d0f93c60a297723abe69d3b22e"
+  },
+  "workspace": {
+    "dependencies": [
+      "npm:ts-pattern@5"
+    ]
   }
 }

@@ -1,6 +1,7 @@
 
 // packages/lfp-type-runtime/mod.ts
 import { Op } from "../lfp-type-spec/src/mod.ts";
+import { match as patternMatch } from "ts-pattern";
 
 export const TYPEOF_PLACEHOLDER = Symbol.for("lfp.typeOf.placeholder");
 
@@ -24,11 +25,27 @@ export type ValidationError = {
 
 function isBC(x: unknown): x is any[] { return Array.isArray(x); }
 
-class VError extends Error {
-  constructor(public readonly path: string, msg: string) {
-    super(path ? `${path}: ${msg}` : msg);
-    this.name = 'ValidationError';
-  }
+// Internal validation error type (branded for type safety)
+type VErrorBrand = { readonly __brand: "VError" };
+type VError = {
+  readonly path: string;
+  readonly message: string;
+  readonly fullMessage: string;
+} & VErrorBrand;
+
+// Factory function for creating validation errors
+function createVError(path: string, message: string): VError {
+  return {
+    __brand: "VError" as const,
+    path,
+    message,
+    fullMessage: path ? `${path}: ${message}` : message,
+  } as VError;
+}
+
+// Type guard for VError
+function isVError(x: unknown): x is VError {
+  return typeof x === "object" && x !== null && (x as any).__brand === "VError";
 }
 
 // Path segment type for lazy path construction
@@ -71,157 +88,234 @@ function getDunionTagMap(bc: any[]): Map<string, any[]> {
   return map;
 }
 
-// Internal validation that returns error instead of throwing (for UNION optimization)
-function validateWithResult(bc: any[], value: unknown, pathSegments: PathSegment[], depth: number): VError | null {
-  if (depth > MAX_DEPTH) {
-    return new VError(buildPath(pathSegments), `maximum nesting depth (${MAX_DEPTH}) exceeded`);
+// Helper functions for complex validation cases (extracted from switch statement)
+
+function validateArray(
+  bc: any[],
+  value: unknown,
+  pathSegments: PathSegment[],
+  depth: number
+): VError | null {
+  if (!Array.isArray(value)) {
+    return createVError(buildPath(pathSegments), `expected array`);
   }
 
-  const op = bc[0];
-  switch (op) {
-    case Op.STRING:
-      if (typeof value !== "string") return new VError(buildPath(pathSegments), `expected string, got ${typeof value}`);
-      return null;
-    case Op.NUMBER:
-      if (typeof value !== "number" || !Number.isFinite(value)) return new VError(buildPath(pathSegments), `expected finite number`);
-      return null;
-    case Op.BOOLEAN:
-      if (typeof value !== "boolean") return new VError(buildPath(pathSegments), `expected boolean`);
-      return null;
-    case Op.NULL:
-      if (value !== null) return new VError(buildPath(pathSegments), `expected null`);
-      return null;
-    case Op.UNDEFINED:
-      if (value !== undefined) return new VError(buildPath(pathSegments), `expected undefined`);
-      return null;
-    case Op.LITERAL: {
-      const lit = bc[1];
-      if (value !== lit) return new VError(buildPath(pathSegments), `expected literal ${JSON.stringify(lit)}`);
-      return null;
-    }
-    case Op.ARRAY: {
-      const elemT = bc[1];
-      if (!Array.isArray(value)) return new VError(buildPath(pathSegments), `expected array`);
-      for (let i = 0; i < value.length; i++) {
-        pathSegments.push(i);
-        const err = validateWithResult(elemT, value[i], pathSegments, depth + 1);
-        pathSegments.pop();
-        if (err) return err;
-      }
-      return null;
-    }
-    case Op.TUPLE: {
-      const n = bc[1] as number;
-      if (!Array.isArray(value)) return new VError(buildPath(pathSegments), `expected tuple[${n}]`);
-      if (value.length !== n) return new VError(buildPath(pathSegments), `expected tuple length ${n}, got ${value.length}`);
-      for (let i = 0; i < n; i++) {
-        const eltT = bc[2 + i];
-        pathSegments.push(i);
-        const err = validateWithResult(eltT, value[i], pathSegments, depth + 1);
-        pathSegments.pop();
-        if (err) return err;
-      }
-      return null;
-    }
-    case Op.OBJECT: {
-      if (value === null || typeof value !== "object" || Array.isArray(value)) return new VError(buildPath(pathSegments), `expected object`);
-      const count = bc[1] as number;
+  const elemT = bc[1];
+  for (let i = 0; i < value.length; i++) {
+    pathSegments.push(i);
+    const err = validateWithResult(elemT, value[i], pathSegments, depth + 1);
+    pathSegments.pop();
+    if (err) return err;
+  }
 
-      // Backward compatibility: check if bc[2] is strict flag (0 or 1) or first PROPERTY marker (Op.PROPERTY = 9)
-      const hasStrictFlag = bc[2] === 0 || bc[2] === 1;
-      const strict = hasStrictFlag && bc[2] === 1;
-      let idx = hasStrictFlag ? 3 : 2;
+  return null;
+}
 
-      // Collect known property names for excess property checking
-      const knownProps = strict ? new Set<string>() : null;
+function validateTuple(
+  bc: any[],
+  value: unknown,
+  pathSegments: PathSegment[],
+  depth: number
+): VError | null {
+  const n = bc[1] as number;
 
-      for (let i = 0; i < count; i++) {
-        const marker = bc[idx++];
-        if (marker !== Op.PROPERTY) throw new Error("corrupt bytecode: expected PROPERTY");
-        const name = bc[idx++];
-        const optional = bc[idx++] === 1;
-        const t = bc[idx++];
+  if (!Array.isArray(value)) {
+    return createVError(buildPath(pathSegments), `expected tuple[${n}]`);
+  }
 
-        if (knownProps) knownProps.add(name);
+  if (value.length !== n) {
+    return createVError(buildPath(pathSegments), `expected tuple length ${n}, got ${value.length}`);
+  }
 
-        if (Object.prototype.hasOwnProperty.call(value as object, name)) {
-          pathSegments.push(name);
-          // @ts-ignore
-          const err = validateWithResult(t, (value as any)[name], pathSegments, depth + 1);
-          pathSegments.pop();
-          if (err) return err;
-        } else if (!optional) {
-          pathSegments.push(name);
-          const err = new VError(buildPath(pathSegments), `required property missing`);
-          pathSegments.pop();
-          return err;
-        }
-      }
+  for (let i = 0; i < n; i++) {
+    const eltT = bc[2 + i];
+    pathSegments.push(i);
+    const err = validateWithResult(eltT, value[i], pathSegments, depth + 1);
+    pathSegments.pop();
+    if (err) return err;
+  }
 
-      // Check for excess properties if strict mode enabled
-      if (strict && knownProps) {
-        for (const key in value) {
-          if (Object.prototype.hasOwnProperty.call(value, key) && !knownProps.has(key)) {
-            pathSegments.push(key);
-            const err = new VError(buildPath(pathSegments), `excess property (not in schema)`);
-            pathSegments.pop();
-            return err;
-          }
-        }
-      }
+  return null;
+}
 
-      return null;
-    }
-    case Op.DUNION: {
-      if (value === null || typeof value !== "object" || Array.isArray(value)) return new VError(buildPath(pathSegments), `expected object for discriminated union`);
-      const tagKey = bc[1] as string;
-      const vTag = (value as any)[tagKey];
-      if (typeof vTag !== "string") {
-        const n = bc[2] as number;
-        const expected = [...Array(n).keys()].map(i => JSON.stringify(bc[3+2*i])).join(", ");
-        pathSegments.push(tagKey);
-        const err = new VError(buildPath(pathSegments), `expected string discriminant; expected one of: ${expected}`);
-        pathSegments.pop();
-        return err;
-      }
-      const tagMap = getDunionTagMap(bc);
-      const variantSchema = tagMap.get(vTag);
-      if (variantSchema) {
-        return validateWithResult(variantSchema, value, pathSegments, depth + 1);
-      }
-      const allTags = Array.from(tagMap.keys()).map(t => JSON.stringify(t)).join(", ");
-      pathSegments.push(tagKey);
-      const err = new VError(buildPath(pathSegments), `unexpected tag ${JSON.stringify(vTag)}; expected one of: ${allTags}`);
+function validateObject(
+  bc: any[],
+  value: unknown,
+  pathSegments: PathSegment[],
+  depth: number
+): VError | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return createVError(buildPath(pathSegments), `expected object`);
+  }
+
+  const count = bc[1] as number;
+
+  // Backward compatibility: check if bc[2] is strict flag (0 or 1) or first PROPERTY marker (Op.PROPERTY = 9)
+  const hasStrictFlag = bc[2] === 0 || bc[2] === 1;
+  const strict = hasStrictFlag && bc[2] === 1;
+  let idx = hasStrictFlag ? 3 : 2;
+
+  // Collect known property names for excess property checking
+  const knownProps = strict ? new Set<string>() : null;
+
+  for (let i = 0; i < count; i++) {
+    const marker = bc[idx++];
+    if (marker !== Op.PROPERTY) throw new Error("corrupt bytecode: expected PROPERTY");
+    const name = bc[idx++];
+    const optional = bc[idx++] === 1;
+    const t = bc[idx++];
+
+    if (knownProps) knownProps.add(name);
+
+    if (Object.prototype.hasOwnProperty.call(value as object, name)) {
+      pathSegments.push(name);
+      // @ts-ignore
+      const err = validateWithResult(t, (value as any)[name], pathSegments, depth + 1);
+      pathSegments.pop();
+      if (err) return err;
+    } else if (!optional) {
+      pathSegments.push(name);
+      const err = createVError(buildPath(pathSegments), `required property missing`);
       pathSegments.pop();
       return err;
     }
-    case Op.UNION: {
-      // Optimized: use Result-based validation instead of try/catch
-      const n = bc[1] as number;
-      for (let i = 0; i < n; i++) {
-        const err = validateWithResult(bc[2 + i], value, pathSegments, depth + 1);
-        if (!err) return null; // Success: one alternative matched
+  }
+
+  // Check for excess properties if strict mode enabled
+  if (strict && knownProps) {
+    for (const key in value) {
+      if (Object.prototype.hasOwnProperty.call(value, key) && !knownProps.has(key)) {
+        pathSegments.push(key);
+        const err = createVError(buildPath(pathSegments), `excess property (not in schema)`);
+        pathSegments.pop();
+        return err;
       }
-      return new VError(buildPath(pathSegments), `no union alternative matched`);
     }
-    case Op.READONLY: {
+  }
+
+  return null;
+}
+
+function validateDUnion(
+  bc: any[],
+  value: unknown,
+  pathSegments: PathSegment[],
+  depth: number
+): VError | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return createVError(buildPath(pathSegments), `expected object for discriminated union`);
+  }
+
+  const tagKey = bc[1] as string;
+  const vTag = (value as any)[tagKey];
+
+  if (typeof vTag !== "string") {
+    const n = bc[2] as number;
+    const expected = [...Array(n).keys()].map(i => JSON.stringify(bc[3+2*i])).join(", ");
+    pathSegments.push(tagKey);
+    const err = createVError(buildPath(pathSegments), `expected string discriminant; expected one of: ${expected}`);
+    pathSegments.pop();
+    return err;
+  }
+
+  const tagMap = getDunionTagMap(bc);
+  const variantSchema = tagMap.get(vTag);
+
+  if (variantSchema) {
+    return validateWithResult(variantSchema, value, pathSegments, depth + 1);
+  }
+
+  const allTags = Array.from(tagMap.keys()).map(t => JSON.stringify(t)).join(", ");
+  pathSegments.push(tagKey);
+  const err = createVError(buildPath(pathSegments), `unexpected tag ${JSON.stringify(vTag)}; expected one of: ${allTags}`);
+  pathSegments.pop();
+  return err;
+}
+
+function validateUnion(
+  bc: any[],
+  value: unknown,
+  pathSegments: PathSegment[],
+  depth: number
+): VError | null {
+  // Optimized: use Result-based validation instead of try/catch
+  const n = bc[1] as number;
+  for (let i = 0; i < n; i++) {
+    const err = validateWithResult(bc[2 + i], value, pathSegments, depth + 1);
+    if (!err) return null; // Success: one alternative matched
+  }
+  return createVError(buildPath(pathSegments), `no union alternative matched`);
+}
+
+// Internal validation that returns error instead of throwing (for UNION optimization)
+// Now using ts-pattern for cleaner pattern matching
+function validateWithResult(bc: any[], value: unknown, pathSegments: PathSegment[], depth: number): VError | null {
+  if (depth > MAX_DEPTH) {
+    return createVError(buildPath(pathSegments), `maximum nesting depth (${MAX_DEPTH}) exceeded`);
+  }
+
+  const op = bc[0];
+
+  return patternMatch<number, VError | null>(op)
+    .with(Op.STRING, () =>
+      typeof value !== "string"
+        ? createVError(buildPath(pathSegments), `expected string, got ${typeof value}`)
+        : null
+    )
+    .with(Op.NUMBER, () =>
+      typeof value !== "number" || !Number.isFinite(value)
+        ? createVError(buildPath(pathSegments), `expected finite number`)
+        : null
+    )
+    .with(Op.BOOLEAN, () =>
+      typeof value !== "boolean"
+        ? createVError(buildPath(pathSegments), `expected boolean`)
+        : null
+    )
+    .with(Op.NULL, () =>
+      value !== null
+        ? createVError(buildPath(pathSegments), `expected null`)
+        : null
+    )
+    .with(Op.UNDEFINED, () =>
+      value !== undefined
+        ? createVError(buildPath(pathSegments), `expected undefined`)
+        : null
+    )
+    .with(Op.LITERAL, () => {
+      const lit = bc[1];
+      return value !== lit
+        ? createVError(buildPath(pathSegments), `expected literal ${JSON.stringify(lit)}`)
+        : null;
+    })
+    .with(Op.ARRAY, () => validateArray(bc, value, pathSegments, depth))
+    .with(Op.TUPLE, () => validateTuple(bc, value, pathSegments, depth))
+    .with(Op.OBJECT, () => validateObject(bc, value, pathSegments, depth))
+    .with(Op.DUNION, () => validateDUnion(bc, value, pathSegments, depth))
+    .with(Op.UNION, () => validateUnion(bc, value, pathSegments, depth))
+    .with(Op.READONLY, () => {
       const inner = bc[1];
       return validateWithResult(inner, value, pathSegments, depth + 1);
-    }
-    case Op.BRAND: {
+    })
+    .with(Op.BRAND, () => {
       const _tag = bc[1];
       const inner = bc[2];
       return validateWithResult(inner, value, pathSegments, depth + 1);
-    }
-    default:
-      return new VError(buildPath(pathSegments), `unsupported opcode ${op}`);
-  }
+    })
+    .otherwise(() => createVError(buildPath(pathSegments), `unsupported opcode ${op}`));
+}
+
+// Convert VError to throwable Error
+function vErrorToError(vErr: VError): Error {
+  const err = new Error(vErr.fullMessage);
+  err.name = 'ValidationError';
+  return err;
 }
 
 // Public throwing API (backwards compatible)
 function validateWith(bc: any[], value: unknown, pathSegments: PathSegment[] = [], depth = 0): void {
   const err = validateWithResult(bc, value, pathSegments, depth);
-  if (err) throw err;
+  if (err) throw vErrorToError(err);
 }
 
 function assertBytecode(t: any): asserts t is any[] {
@@ -258,16 +352,11 @@ export function validate(t: TypeObject, value: unknown) {
  */
 export function validateSafe<T>(t: TypeObject, value: unknown): Result<T, ValidationError> {
   assertBytecode(t);
-  try {
-    validateWith(t as any[], value, []);
-    return { ok: true, value: value as T };
-  } catch (err) {
-    if (err instanceof VError) {
-      return { ok: false, error: { path: err.path, message: err.message } };
-    }
-    // Unexpected errors (e.g., corrupt bytecode)
-    return { ok: false, error: { path: "", message: String(err) } };
+  const err = validateWithResult(t as any[], value, [], 0);
+  if (err) {
+    return { ok: false, error: { path: err.path, message: err.message } };
   }
+  return { ok: true, value: value as T };
 }
 
 export function serialize(t: TypeObject, value: unknown) {
