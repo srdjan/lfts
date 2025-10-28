@@ -23,6 +23,11 @@ export type ValidationError = {
   readonly message: string;
 };
 
+// Result type with multiple errors (for error aggregation)
+export type ValidationResult<T> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly errors: readonly ValidationError[] };
+
 function isBC(x: unknown): x is any[] { return Array.isArray(x); }
 
 // Internal validation error type (branded for type safety)
@@ -357,6 +362,281 @@ export function validateSafe<T>(t: TypeObject, value: unknown): Result<T, Valida
     return { ok: false, error: { path: err.path, message: err.message } };
   }
   return { ok: true, value: value as T };
+}
+
+/**
+ * Validate a value against a schema and collect ALL errors (error aggregation)
+ * Instead of stopping at the first error, this collects all validation failures
+ *
+ * @param t - Bytecode schema
+ * @param value - Value to validate
+ * @param maxErrors - Maximum number of errors to collect (default: 100, prevents infinite loops)
+ * @returns ValidationResult<T> with either the validated value or all errors
+ *
+ * @example
+ * const result = validateAll(UserSchema, userData);
+ * if (!result.ok) {
+ *   console.log(`Found ${result.errors.length} validation errors:`);
+ *   result.errors.forEach(err => console.log(`  ${err.path}: ${err.message}`));
+ * }
+ */
+export function validateAll<T>(
+  t: TypeObject,
+  value: unknown,
+  maxErrors = 100
+): ValidationResult<T> {
+  assertBytecode(t);
+  const errors: ValidationError[] = [];
+  collectErrors(t as any[], value, [], 0, errors, maxErrors);
+
+  if (errors.length === 0) {
+    return { ok: true, value: value as T };
+  }
+  return { ok: false, errors };
+}
+
+// Internal function for error aggregation - collects all errors instead of short-circuiting
+function collectErrors(
+  bc: any[],
+  value: unknown,
+  pathSegments: PathSegment[],
+  depth: number,
+  errors: ValidationError[],
+  maxErrors: number
+): void {
+  // Stop if we've hit the max error limit
+  if (errors.length >= maxErrors) return;
+
+  if (depth > MAX_DEPTH) {
+    errors.push({
+      path: buildPath(pathSegments),
+      message: `maximum nesting depth (${MAX_DEPTH}) exceeded`
+    });
+    return;
+  }
+
+  const op = bc[0];
+
+  patternMatch<number, void>(op)
+    .with(Op.STRING, () => {
+      if (typeof value !== "string") {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected string, got ${typeof value}`
+        });
+      }
+    })
+    .with(Op.NUMBER, () => {
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected finite number`
+        });
+      }
+    })
+    .with(Op.BOOLEAN, () => {
+      if (typeof value !== "boolean") {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected boolean`
+        });
+      }
+    })
+    .with(Op.NULL, () => {
+      if (value !== null) {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected null`
+        });
+      }
+    })
+    .with(Op.UNDEFINED, () => {
+      if (value !== undefined) {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected undefined`
+        });
+      }
+    })
+    .with(Op.LITERAL, () => {
+      const lit = bc[1];
+      if (value !== lit) {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected literal ${JSON.stringify(lit)}`
+        });
+      }
+    })
+    .with(Op.ARRAY, () => {
+      if (!Array.isArray(value)) {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected array`
+        });
+        return;
+      }
+      const elemT = bc[1];
+      // Validate all elements even if some fail
+      for (let i = 0; i < value.length && errors.length < maxErrors; i++) {
+        pathSegments.push(i);
+        collectErrors(elemT, value[i], pathSegments, depth + 1, errors, maxErrors);
+        pathSegments.pop();
+      }
+    })
+    .with(Op.TUPLE, () => {
+      const n = bc[1] as number;
+      if (!Array.isArray(value)) {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected tuple[${n}]`
+        });
+        return;
+      }
+      if (value.length !== n) {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected tuple length ${n}, got ${value.length}`
+        });
+      }
+      // Validate all elements even if length is wrong
+      const checkLength = Math.min(n, value.length);
+      for (let i = 0; i < checkLength && errors.length < maxErrors; i++) {
+        const eltT = bc[2 + i];
+        pathSegments.push(i);
+        collectErrors(eltT, value[i], pathSegments, depth + 1, errors, maxErrors);
+        pathSegments.pop();
+      }
+    })
+    .with(Op.OBJECT, () => {
+      if (value === null || typeof value !== "object" || Array.isArray(value)) {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected object`
+        });
+        return;
+      }
+
+      const count = bc[1] as number;
+      const hasStrictFlag = bc[2] === 0 || bc[2] === 1;
+      const strict = hasStrictFlag && bc[2] === 1;
+      let idx = hasStrictFlag ? 3 : 2;
+      const knownProps = strict ? new Set<string>() : null;
+
+      // Validate all properties, don't stop at first error
+      for (let i = 0; i < count && errors.length < maxErrors; i++) {
+        const marker = bc[idx++];
+        if (marker !== Op.PROPERTY) throw new Error("corrupt bytecode: expected PROPERTY");
+        const name = bc[idx++];
+        const optional = bc[idx++] === 1;
+        const t = bc[idx++];
+
+        if (knownProps) knownProps.add(name);
+
+        if (Object.prototype.hasOwnProperty.call(value as object, name)) {
+          pathSegments.push(name);
+          collectErrors(t, (value as any)[name], pathSegments, depth + 1, errors, maxErrors);
+          pathSegments.pop();
+        } else if (!optional) {
+          pathSegments.push(name);
+          errors.push({
+            path: buildPath(pathSegments),
+            message: `required property missing`
+          });
+          pathSegments.pop();
+        }
+      }
+
+      // Check for excess properties
+      if (strict && knownProps && errors.length < maxErrors) {
+        for (const key in value) {
+          if (Object.prototype.hasOwnProperty.call(value, key) && !knownProps.has(key)) {
+            pathSegments.push(key);
+            errors.push({
+              path: buildPath(pathSegments),
+              message: `excess property (not in schema)`
+            });
+            pathSegments.pop();
+            if (errors.length >= maxErrors) break;
+          }
+        }
+      }
+    })
+    .with(Op.DUNION, () => {
+      if (value === null || typeof value !== "object" || Array.isArray(value)) {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected object for discriminated union`
+        });
+        return;
+      }
+
+      const tagKey = bc[1] as string;
+      const vTag = (value as any)[tagKey];
+
+      if (typeof vTag !== "string") {
+        const n = bc[2] as number;
+        const expected = [...Array(n).keys()].map(i => JSON.stringify(bc[3+2*i])).join(", ");
+        pathSegments.push(tagKey);
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected string discriminant; expected one of: ${expected}`
+        });
+        pathSegments.pop();
+        return;
+      }
+
+      const tagMap = getDunionTagMap(bc);
+      const variantSchema = tagMap.get(vTag);
+
+      if (variantSchema) {
+        collectErrors(variantSchema, value, pathSegments, depth + 1, errors, maxErrors);
+      } else {
+        const allTags = Array.from(tagMap.keys()).map(t => JSON.stringify(t)).join(", ");
+        pathSegments.push(tagKey);
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `unexpected tag ${JSON.stringify(vTag)}; expected one of: ${allTags}`
+        });
+        pathSegments.pop();
+      }
+    })
+    .with(Op.UNION, () => {
+      // For unions with aggregation, we try all alternatives and report if NONE match
+      // This is different from the short-circuit version
+      const n = bc[1] as number;
+      let anyMatched = false;
+
+      for (let i = 0; i < n; i++) {
+        const alternativeErrors: ValidationError[] = [];
+        collectErrors(bc[2 + i], value, pathSegments, depth + 1, alternativeErrors, maxErrors);
+        if (alternativeErrors.length === 0) {
+          anyMatched = true;
+          break; // One alternative matched, union is valid
+        }
+      }
+
+      if (!anyMatched) {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `no union alternative matched`
+        });
+      }
+    })
+    .with(Op.READONLY, () => {
+      const inner = bc[1];
+      collectErrors(inner, value, pathSegments, depth + 1, errors, maxErrors);
+    })
+    .with(Op.BRAND, () => {
+      const _tag = bc[1];
+      const inner = bc[2];
+      collectErrors(inner, value, pathSegments, depth + 1, errors, maxErrors);
+    })
+    .otherwise(() => {
+      errors.push({
+        path: buildPath(pathSegments),
+        message: `unsupported opcode ${op}`
+      });
+    });
 }
 
 export function serialize(t: TypeObject, value: unknown) {
