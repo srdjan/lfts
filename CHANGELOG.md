@@ -16,10 +16,20 @@ All notable changes to the LFP compiler project are documented here.
   - Backward compatible: defaults to loose mode
   - Use cases: API validation, configuration files, security
 
+- **Refinement System**: Runtime validation constraints for numbers, strings, and arrays
+  - **Number refinements**: `min`, `max`, `integer`
+  - **String refinements**: `minLength`, `maxLength`
+  - **Array refinements**: `minItems`, `maxItems`
+  - Composable: chain multiple refinements (e.g., `refine.min(refine.max(enc.num(), 100), 0)`)
+  - Works with all validation APIs: `validate()`, `validateSafe()`, `validateAll()`
+  - Compatible with READONLY and BRAND wrappers
+  - Note: Regex patterns not supported (by design, LFP language limitation)
+
 - **Comprehensive Benchmark Suite**:
   - DUNION vs UNION performance comparison
   - Union optimization benchmarks
   - Strict mode validation tests
+  - Schema memoization benchmarks
 
 ### Changed
 - **OBJECT Bytecode Format**: Extended with optional strict flag

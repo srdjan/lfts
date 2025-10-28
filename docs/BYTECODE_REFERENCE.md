@@ -27,12 +27,27 @@ Each type description is a directed tree whose nodes are drawn from the `Op` enu
 | `READONLY` | Structural immutability marker. | `inner: node` |
 | `DUNION` | Discriminated union keyed by a property. | `tagKey: stringId`, `variantCount: uint32`, `variants[variantCount]: { tag: stringId, schema: node }` |
 | `BRAND` | Structural brand intersection. | `tag: stringId`, `inner: node` |
+| `REFINE_MIN` | Number minimum constraint. | `min: number`, `inner: node` |
+| `REFINE_MAX` | Number maximum constraint. | `max: number`, `inner: node` |
+| `REFINE_INTEGER` | Integer constraint. | `inner: node` |
+| `REFINE_MIN_LENGTH` | String minimum length constraint. | `minLength: uint32`, `inner: node` |
+| `REFINE_MAX_LENGTH` | String maximum length constraint. | `maxLength: uint32`, `inner: node` |
+| `REFINE_MIN_ITEMS` | Array minimum items constraint. | `minItems: uint32`, `inner: node` |
+| `REFINE_MAX_ITEMS` | Array maximum items constraint. | `maxItems: uint32`, `inner: node` |
 
 ### Node Semantics
 - `PROPERTY.optional` indicates whether the owning `OBJECT` requires the key to be present during validation.
 - `READONLY` conveys intent only; current runtimes treat it as an alias but retain the marker for future alias analysis.
 - `OPTIONAL` is a logical placeholder. Emitters MUST NOT produce it until the gate/policy permits the construct and runtimes implement the semantics.
 - `DUNION` requires the discriminant property to be a literal string in each variant. Runtimes must enforce strict tag matching before delegating to the variant schema.
+- **Refinements** (v0.3.0+) validate constraints after type validation:
+  - `REFINE_MIN/MAX`: Validates inner type is number, then checks `value >= min` or `value <= max`
+  - `REFINE_INTEGER`: Validates inner type is number, then checks `Number.isInteger(value)`
+  - `REFINE_MIN_LENGTH/MAX_LENGTH`: Validates inner type is string, then checks `string.length`
+  - `REFINE_MIN_ITEMS/MAX_ITEMS`: Validates inner type is array, then checks `array.length`
+  - Refinements are composable and can be nested (e.g., `REFINE_MIN(REFINE_MAX(NUMBER))`)
+  - Compatible with wrappers: `READONLY(REFINE_MIN(...))` and `BRAND(..., REFINE_MIN(...))`
+  - Note: Regex refinements are NOT supported by design (LFP language limitation)
 - Any unsupported TypeScript construct must materialise as a well-defined **diagnostic node**. Iteration 1 uses `LITERAL` with a descriptive string (e.g., `"/*unsupported intersection*/"`); future revisions may introduce a dedicated `ERROR` node.
 
 ## Emission Behaviour
@@ -560,6 +575,88 @@ To guide optimization decisions, implement benchmark suite covering:
 - DUNION with 5+ variants: 20x+ faster than equivalent UNION
 - Deep validation: 10x+ faster with lazy path construction
 - Overall runtime: Within 2-3x of hand-written validators
+
+## Refinements (v0.3.0+)
+
+Refinements provide runtime validation constraints for primitive types. They wrap a base schema and add additional validation checks.
+
+### Usage Examples
+
+```typescript
+import { enc } from "lfp-type-spec";
+
+// Number constraints
+const age = enc.refine.min(enc.num(), 18);              // age >= 18
+const percent = enc.refine.max(enc.num(), 100);         // percent <= 100
+const score = enc.refine.min(                           // 0 <= score <= 100
+  enc.refine.max(enc.num(), 100),
+  0
+);
+const count = enc.refine.integer(enc.num());            // integer only
+
+// String constraints
+const username = enc.refine.minLength(enc.str(), 3);    // length >= 3
+const code = enc.refine.maxLength(enc.str(), 10);       // length <= 10
+const password = enc.refine.minLength(                  // 8 <= length <= 20
+  enc.refine.maxLength(enc.str(), 20),
+  8
+);
+
+// Array constraints
+const tags = enc.refine.minItems(enc.arr(enc.str()), 2);  // length >= 2
+const top5 = enc.refine.maxItems(enc.arr(enc.num()), 5);  // length <= 5
+const team = enc.refine.minItems(                         // 3 <= length <= 10
+  enc.refine.maxItems(enc.arr(enc.str()), 10),
+  3
+);
+
+// Complex nested schemas
+const userSchema = enc.obj([
+  { name: "username", type: enc.refine.minLength(enc.str(), 3) },
+  { name: "age", type: enc.refine.min(enc.refine.integer(enc.num()), 18) },
+  { name: "score", type: enc.refine.min(enc.refine.max(enc.num(), 100), 0) },
+]);
+
+// Works with wrappers
+const positiveInt = enc.brand(
+  enc.refine.min(enc.refine.integer(enc.num()), 1),
+  "PositiveInt"
+);
+const readonlyAge = enc.ro(enc.refine.min(enc.num(), 0));
+```
+
+### Validation Behavior
+
+1. **Inner type validated first**: Refinement checks only run if the base type is valid
+2. **Composable**: Multiple refinements can be nested in any order
+3. **Error messages**: Include both the constraint and actual value for debugging
+4. **Error aggregation**: Works with `validateAll()` to collect all refinement failures
+
+### Bytecode Format
+
+```typescript
+// Number min: [Op.REFINE_MIN, minValue, innerSchema]
+[Op.REFINE_MIN, 18, [Op.NUMBER]]
+
+// Composed refinements: min + max
+[Op.REFINE_MIN, 0, [Op.REFINE_MAX, 100, [Op.NUMBER]]]
+
+// Integer with min constraint
+[Op.REFINE_MIN, 1, [Op.REFINE_INTEGER, [Op.NUMBER]]]
+
+// String length constraints
+[Op.REFINE_MIN_LENGTH, 3, [Op.REFINE_MAX_LENGTH, 20, [Op.STRING]]]
+
+// Array with item constraints
+[Op.REFINE_MIN_ITEMS, 2, [Op.ARRAY, [Op.STRING]]]
+```
+
+### Limitations
+
+- **No regex patterns**: Regular expression refinements are not supported (LFP language design decision)
+- **No custom validators**: Only built-in refinements are available
+- **Type checking first**: Refinements cannot override base type validation
+- **Performance**: Each refinement adds one validation step (minimal overhead)
 
 ## Maintenance Checklist
 - Update this document whenever the logical node set, payload semantics, or encoding constraints change.

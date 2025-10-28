@@ -11,6 +11,10 @@ export enum Op {
   DUNION,
   // branding
   BRAND,
+  // refinements
+  REFINE_MIN, REFINE_MAX, REFINE_INTEGER,
+  REFINE_MIN_LENGTH, REFINE_MAX_LENGTH,
+  REFINE_MIN_ITEMS, REFINE_MAX_ITEMS,
 }
 
 export type Bytecode = any[]; // nested tuples/arrays
@@ -38,4 +42,15 @@ export const enc = {
   ],
   ro: (t: Bytecode): Bytecode => [Op.READONLY, t],
   brand: (t: Bytecode, tag: string): Bytecode => [Op.BRAND, tag, t],
+
+  // refinements
+  refine: {
+    min: (t: Bytecode, min: number): Bytecode => [Op.REFINE_MIN, min, t],
+    max: (t: Bytecode, max: number): Bytecode => [Op.REFINE_MAX, max, t],
+    integer: (t: Bytecode): Bytecode => [Op.REFINE_INTEGER, t],
+    minLength: (t: Bytecode, len: number): Bytecode => [Op.REFINE_MIN_LENGTH, len, t],
+    maxLength: (t: Bytecode, len: number): Bytecode => [Op.REFINE_MAX_LENGTH, len, t],
+    minItems: (t: Bytecode, count: number): Bytecode => [Op.REFINE_MIN_ITEMS, count, t],
+    maxItems: (t: Bytecode, count: number): Bytecode => [Op.REFINE_MAX_ITEMS, count, t],
+  },
 };

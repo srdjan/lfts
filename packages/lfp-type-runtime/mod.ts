@@ -329,6 +329,89 @@ function validateWithResult(bc: any[], value: unknown, pathSegments: PathSegment
       const inner = getInnerSchema(bc);
       return validateWithResult(inner, value, pathSegments, depth + 1);
     })
+    .with(Op.REFINE_MIN, () => {
+      const minValue = bc[1] as number;
+      const innerSchema = bc[2];
+      const err = validateWithResult(innerSchema, value, pathSegments, depth + 1);
+      if (err) return err;
+      if (typeof value !== "number") {
+        return createVError(buildPath(pathSegments), `min refinement requires number type`);
+      }
+      return value < minValue
+        ? createVError(buildPath(pathSegments), `expected >= ${minValue}, got ${value}`)
+        : null;
+    })
+    .with(Op.REFINE_MAX, () => {
+      const maxValue = bc[1] as number;
+      const innerSchema = bc[2];
+      const err = validateWithResult(innerSchema, value, pathSegments, depth + 1);
+      if (err) return err;
+      if (typeof value !== "number") {
+        return createVError(buildPath(pathSegments), `max refinement requires number type`);
+      }
+      return value > maxValue
+        ? createVError(buildPath(pathSegments), `expected <= ${maxValue}, got ${value}`)
+        : null;
+    })
+    .with(Op.REFINE_INTEGER, () => {
+      const innerSchema = bc[1];
+      const err = validateWithResult(innerSchema, value, pathSegments, depth + 1);
+      if (err) return err;
+      if (typeof value !== "number") {
+        return createVError(buildPath(pathSegments), `integer refinement requires number type`);
+      }
+      return !Number.isInteger(value)
+        ? createVError(buildPath(pathSegments), `expected integer, got ${value}`)
+        : null;
+    })
+    .with(Op.REFINE_MIN_LENGTH, () => {
+      const minLen = bc[1] as number;
+      const innerSchema = bc[2];
+      const err = validateWithResult(innerSchema, value, pathSegments, depth + 1);
+      if (err) return err;
+      if (typeof value !== "string") {
+        return createVError(buildPath(pathSegments), `minLength refinement requires string type`);
+      }
+      return value.length < minLen
+        ? createVError(buildPath(pathSegments), `expected length >= ${minLen}, got ${value.length}`)
+        : null;
+    })
+    .with(Op.REFINE_MAX_LENGTH, () => {
+      const maxLen = bc[1] as number;
+      const innerSchema = bc[2];
+      const err = validateWithResult(innerSchema, value, pathSegments, depth + 1);
+      if (err) return err;
+      if (typeof value !== "string") {
+        return createVError(buildPath(pathSegments), `maxLength refinement requires string type`);
+      }
+      return value.length > maxLen
+        ? createVError(buildPath(pathSegments), `expected length <= ${maxLen}, got ${value.length}`)
+        : null;
+    })
+    .with(Op.REFINE_MIN_ITEMS, () => {
+      const minItems = bc[1] as number;
+      const innerSchema = bc[2];
+      const err = validateWithResult(innerSchema, value, pathSegments, depth + 1);
+      if (err) return err;
+      if (!Array.isArray(value)) {
+        return createVError(buildPath(pathSegments), `minItems refinement requires array type`);
+      }
+      return value.length < minItems
+        ? createVError(buildPath(pathSegments), `expected array length >= ${minItems}, got ${value.length}`)
+        : null;
+    })
+    .with(Op.REFINE_MAX_ITEMS, () => {
+      const maxItems = bc[1] as number;
+      const innerSchema = bc[2];
+      const err = validateWithResult(innerSchema, value, pathSegments, depth + 1);
+      if (err) return err;
+      if (!Array.isArray(value)) {
+        return createVError(buildPath(pathSegments), `maxItems refinement requires array type`);
+      }
+      return value.length > maxItems
+        ? createVError(buildPath(pathSegments), `expected array length <= ${maxItems}, got ${value.length}`)
+        : null;
+    })
     .otherwise(() => createVError(buildPath(pathSegments), `unsupported opcode ${op}`));
 }
 
@@ -653,6 +736,84 @@ function collectErrors(
       // Use cached inner schema for performance
       const inner = getInnerSchema(bc);
       collectErrors(inner, value, pathSegments, depth + 1, errors, maxErrors);
+    })
+    .with(Op.REFINE_MIN, () => {
+      const minValue = bc[1] as number;
+      const innerSchema = bc[2];
+      // First validate the inner type
+      collectErrors(innerSchema, value, pathSegments, depth + 1, errors, maxErrors);
+      // Then check refinement if no errors so far
+      if (errors.length < maxErrors && typeof value === "number" && value < minValue) {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected >= ${minValue}, got ${value}`
+        });
+      }
+    })
+    .with(Op.REFINE_MAX, () => {
+      const maxValue = bc[1] as number;
+      const innerSchema = bc[2];
+      collectErrors(innerSchema, value, pathSegments, depth + 1, errors, maxErrors);
+      if (errors.length < maxErrors && typeof value === "number" && value > maxValue) {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected <= ${maxValue}, got ${value}`
+        });
+      }
+    })
+    .with(Op.REFINE_INTEGER, () => {
+      const innerSchema = bc[1];
+      collectErrors(innerSchema, value, pathSegments, depth + 1, errors, maxErrors);
+      if (errors.length < maxErrors && typeof value === "number" && !Number.isInteger(value)) {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected integer, got ${value}`
+        });
+      }
+    })
+    .with(Op.REFINE_MIN_LENGTH, () => {
+      const minLen = bc[1] as number;
+      const innerSchema = bc[2];
+      collectErrors(innerSchema, value, pathSegments, depth + 1, errors, maxErrors);
+      if (errors.length < maxErrors && typeof value === "string" && value.length < minLen) {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected length >= ${minLen}, got ${value.length}`
+        });
+      }
+    })
+    .with(Op.REFINE_MAX_LENGTH, () => {
+      const maxLen = bc[1] as number;
+      const innerSchema = bc[2];
+      collectErrors(innerSchema, value, pathSegments, depth + 1, errors, maxErrors);
+      if (errors.length < maxErrors && typeof value === "string" && value.length > maxLen) {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected length <= ${maxLen}, got ${value.length}`
+        });
+      }
+    })
+    .with(Op.REFINE_MIN_ITEMS, () => {
+      const minItems = bc[1] as number;
+      const innerSchema = bc[2];
+      collectErrors(innerSchema, value, pathSegments, depth + 1, errors, maxErrors);
+      if (errors.length < maxErrors && Array.isArray(value) && value.length < minItems) {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected array length >= ${minItems}, got ${value.length}`
+        });
+      }
+    })
+    .with(Op.REFINE_MAX_ITEMS, () => {
+      const maxItems = bc[1] as number;
+      const innerSchema = bc[2];
+      collectErrors(innerSchema, value, pathSegments, depth + 1, errors, maxErrors);
+      if (errors.length < maxErrors && Array.isArray(value) && value.length > maxItems) {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected array length <= ${maxItems}, got ${value.length}`
+        });
+      }
     })
     .otherwise(() => {
       errors.push({
