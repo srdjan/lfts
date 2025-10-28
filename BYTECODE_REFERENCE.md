@@ -180,13 +180,263 @@ OBJECT
 The dump above illustrates the magic, version, string table (`"name"`, `"age"`), and the node records referencing those indices.
 
 ### Tagged union (logical)
-```
-DUNION tagKey="type"
-  ├─ tag="circle" → OBJECT(radius: NUMBER)
-  └─ tag="square" → OBJECT(size: NUMBER)
+
+**TypeScript Source:**
+```typescript
+type Shape =
+  | { type: "circle"; radius: number }
+  | { type: "square"; size: number };
 ```
 
-Encoding A and B follow the same patterns as above, substituting the `DUNION` payload ordering.
+**Logical Structure:**
+```
+DUNION tagKey="type" variantCount=2
+  ├─ tag="circle" → OBJECT propertyCount=2
+  │   ├─ PROPERTY name="type" optional=false → LITERAL "circle"
+  │   └─ PROPERTY name="radius" optional=false → NUMBER
+  └─ tag="square" → OBJECT propertyCount=2
+      ├─ PROPERTY name="type" optional=false → LITERAL "square"
+      └─ PROPERTY name="size" optional=false → NUMBER
+```
+
+### Encoding A (JS array) - Tagged Union
+
+```javascript
+[
+  Op.DUNION,      // 13 - Discriminated union opcode
+  "type",         // tagKey: discriminant property name
+  2,              // variantCount: number of union variants
+  // Variant 1: circle
+  "circle",       // tag value
+  [               // schema for circle variant
+    Op.OBJECT, 2,
+    Op.PROPERTY, "type", 0, [Op.LITERAL, "circle"],
+    Op.PROPERTY, "radius", 0, [Op.NUMBER]
+  ],
+  // Variant 2: square
+  "square",       // tag value
+  [               // schema for square variant
+    Op.OBJECT, 2,
+    Op.PROPERTY, "type", 0, [Op.LITERAL, "square"],
+    Op.PROPERTY, "size", 0, [Op.NUMBER]
+  ]
+]
+```
+
+**Payload structure:**
+- `[0]`: Opcode (Op.DUNION = 13)
+- `[1]`: Discriminant property name (string)
+- `[2]`: Variant count (uint32)
+- `[3 + 2*i]`: Tag value for variant i (string)
+- `[3 + 2*i + 1]`: Schema bytecode for variant i (nested array)
+
+### Encoding B (binary) - Tagged Union
+
+```
+Offset  Bytes                          Description
+------  -----                          -----------
+0x00    4c 46 50 42                    Magic "LFPB"
+0x04    00 01                          Version 1.0.0
+0x06    00 00
+0x08    00 00
+0x0A    00 00                          Feature flags (reserved)
+
+        === String Table ===
+0x0C    00 04                          StringCount = 4
+0x0E    00 04 74 79 70 65              #0: "type" (length=4)
+0x14    00 06 63 69 72 63 6c 65        #1: "circle" (length=6)
+0x1C    00 06 72 61 64 69 75 73        #2: "radius" (length=6)
+0x24    00 06 73 71 75 61 72 65        #3: "square" (length=6)
+0x2C    00 04 73 69 7a 65              #4: "size" (length=4)
+
+        === Node Table ===
+0x32    00 00 00 09                    NodeCount = 9 nodes
+
+        Node 0: DUNION root
+0x36    0d                             Op.DUNION
+0x37    00 00                          tagKey = stringId #0 ("type")
+0x39    00 02                          variantCount = 2
+0x3B    00 01                          variant[0].tag = stringId #1 ("circle")
+0x3D    00 00 00 01                    variant[0].schema = nodeId #1
+0x41    00 03                          variant[1].tag = stringId #3 ("square")
+0x43    00 00 00 05                    variant[1].schema = nodeId #5
+
+        Node 1: OBJECT for circle
+0x47    08                             Op.OBJECT
+0x48    00 02                          propertyCount = 2
+0x4A    00 00 00 02                    property[0] = nodeId #2
+0x4E    00 00 00 03                    property[1] = nodeId #3
+
+        Node 2: PROPERTY "type" = LITERAL "circle"
+0x52    09                             Op.PROPERTY
+0x53    00 00                          name = stringId #0 ("type")
+0x55    00                             optional = false
+0x56    00 00 00 04                    schema = nodeId #4 (LITERAL)
+
+        Node 3: PROPERTY "radius" = NUMBER
+0x5A    09                             Op.PROPERTY
+0x5B    00 02                          name = stringId #2 ("radius")
+0x5D    00                             optional = false
+0x5E    00 00 00 08                    schema = nodeId #8 (NUMBER)
+
+        Node 4: LITERAL "circle"
+0x62    05                             Op.LITERAL
+0x63    00 01                          value = stringId #1 ("circle")
+
+        Node 5: OBJECT for square
+0x65    08                             Op.OBJECT
+0x66    00 02                          propertyCount = 2
+0x68    00 00 00 06                    property[0] = nodeId #6
+0x6C    00 00 00 07                    property[1] = nodeId #7
+
+        Node 6: PROPERTY "type" = LITERAL "square"
+0x70    09                             Op.PROPERTY
+0x71    00 00                          name = stringId #0 ("type")
+0x73    00                             optional = false
+0x74    00 00 00 09                    schema = nodeId #9 (LITERAL)
+
+        Node 7: PROPERTY "size" = NUMBER
+0x78    09                             Op.PROPERTY
+0x79    00 04                          name = stringId #4 ("size")
+0x7B    00                             optional = false
+0x7C    00 00 00 08                    schema = nodeId #8 (NUMBER)
+
+        Node 8: NUMBER (shared by both variants)
+0x80    01                             Op.NUMBER
+
+        Node 9: LITERAL "square"
+0x81    05                             Op.LITERAL
+0x82    00 03                          value = stringId #3 ("square")
+```
+
+### DUNION Validation Flow
+
+When validating `{ type: "circle", radius: 10 }` against the DUNION schema:
+
+1. **Check value is object**: Ensure value is non-null object (not array)
+2. **Read discriminant**: Extract `value[tagKey]` → `value["type"]` → `"circle"`
+3. **Validate discriminant type**: Ensure discriminant is string
+4. **Lookup tag**: Search variants for matching tag (current: O(n) linear search)
+5. **Delegate validation**: If tag matches, validate entire object against variant schema
+6. **Error on mismatch**: If no tag matches, report error with list of valid tags
+
+**Optimization opportunity**: Runtime can cache `tagKey → Map<tag, schema>` using WeakMap keyed by the DUNION bytecode array reference. This converts step 4 from O(n) to O(1) after first validation of a given schema instance.
+
+## Optimization Opportunities
+
+### Phase 1: JavaScript Runtime Optimizations
+
+**1. DUNION Tag Map Caching (High Impact)**
+
+**Current implementation** ([packages/lfp-type-runtime/mod.ts](packages/lfp-type-runtime/mod.ts:109-112)):
+```typescript
+// O(n) linear search through variants
+for (let i = 0; i < n; i++) {
+  const tag = bc[3 + 2*i] as string;
+  const schema = bc[3 + 2*i + 1] as any[];
+  if (vTag === tag) { validateWith(schema, value, path, depth + 1); return; }
+}
+```
+
+**Proposed optimization**:
+```typescript
+// WeakMap keyed by bytecode array reference for O(1) lookup
+const dunionCache = new WeakMap<any[], Map<string, any[]>>();
+
+function getTagMap(bc: any[]): Map<string, any[]> {
+  let map = dunionCache.get(bc);
+  if (!map) {
+    map = new Map();
+    const n = bc[2] as number;
+    for (let i = 0; i < n; i++) {
+      const tag = bc[3 + 2*i] as string;
+      const schema = bc[3 + 2*i + 1] as any[];
+      map.set(tag, schema);
+    }
+    dunionCache.set(bc, map);
+  }
+  return map;
+}
+
+// Usage in DUNION case:
+const tagMap = getTagMap(bc);
+const variantSchema = tagMap.get(vTag);
+if (variantSchema) {
+  validateWith(variantSchema, value, path, depth + 1);
+  return;
+}
+throw new VError(/* tag not found */);
+```
+
+**Impact**: O(1) tag lookup after first validation of a schema instance. Most significant for:
+- ADTs with 5+ variants (5-10x speedup)
+- Repeated validation of the same schema (hot paths)
+- Deeply nested structures with repeated ADT types
+
+**Tradeoffs**:
+- Memory: One Map per unique DUNION bytecode (negligible, WeakMap allows GC)
+- Complexity: +15 lines, one additional data structure
+- Compatibility: Fully backward compatible
+
+---
+
+**2. Lazy Path Stringification (Medium Impact)**
+
+**Current**: Path strings built eagerly on every recursive call
+**Proposed**: Build path strings only when reporting errors
+
+**Impact**: 5-15% speedup on deep validation (80%+ validation calls succeed)
+
+---
+
+**3. Schema Memoization (Medium Impact)**
+
+**Current**: No caching of resolved schemas across validation calls
+**Proposed**: Cache schema resolution for branded/readonly wrappers
+
+**Impact**: 10-20% speedup for schemas with many READONLY/BRAND wrappers
+
+---
+
+### Phase 2: WASM Runtime (Future Consideration)
+
+**Feasibility**: Current bytecode is WASM-compatible (integer opcodes, flat structure)
+
+**Expected gains**:
+- 2-5x additional speedup over optimized JavaScript runtime
+- Reduced bundle size (100-200 KB → 20-40 KB for validator core)
+- Consistent performance across browsers/engines
+
+**Prerequisites**:
+- Complete Phase 1 optimizations first (10-100x gain)
+- Benchmark against optimized JS to justify WASM complexity
+- Only proceed if JavaScript performance insufficient for use cases
+
+**Implementation path**:
+1. Implement binary encoding (Encoding B specification above)
+2. Create WASM loader for binary bytecode
+3. Write validator in Rust/AssemblyScript targeting WASM
+4. Benchmark against optimized JavaScript runtime
+5. Maintain both runtimes if WASM shows 3x+ improvement
+
+**Compatibility**: WASM runtime would consume same logical bytecode structure, just encoded as binary stream instead of JavaScript arrays.
+
+---
+
+### Benchmark Suite Recommendations
+
+To guide optimization decisions, implement benchmark suite covering:
+
+1. **DUNION vs UNION validation** (various variant counts: 2, 5, 10, 20)
+2. **Nested ADT validation** (ADTs containing ADTs)
+3. **Deep object trees** (10+ levels of nesting)
+4. **Large batch validation** (10k+ objects)
+5. **Hot path scenarios** (repeated validation of same schema)
+
+**Success criteria**: Phase 1 optimizations should achieve:
+- DUNION with 5+ variants: 20x+ faster than equivalent UNION
+- Deep validation: 10x+ faster with lazy path construction
+- Overall runtime: Within 2-3x of hand-written validators
 
 ## Maintenance Checklist
 - Update this document whenever the logical node set, payload semantics, or encoding constraints change.
