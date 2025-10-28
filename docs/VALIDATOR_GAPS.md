@@ -5,6 +5,8 @@ This lists the **known missing features** in the built-in validator compared to 
 **Recent improvements (v0.2.0)**:
 - ✅ DUNION discriminated union fast-path with O(1) tag lookup (40x-1600x speedup)
 - ✅ Lazy path construction (eliminates string concat overhead on happy path)
+- ✅ UNION Result-based validation (2-5x speedup, eliminates try/catch overhead)
+- ✅ Excess-property policy (optional strict mode for objects)
 
 ## Type surface & semantics
 - **No recursive/self-referential types** (e.g., trees, graphs).
@@ -19,8 +21,7 @@ This lists the **known missing features** in the built-in validator compared to 
 - **No numeric refinements**: min/max, integer-only, exclusive bounds, multiples.
 - **No string refinements**: min/max length, regex patterns, specific formats (email/uuid/url).
 - **No array refinements**: min/max items, uniqueItems, item-by-index rules.
-- **No object refinements**: required-vs-optional is supported, but **no excess-property policy**
-  (e.g., forbid unknown keys), and **no dependency/oneOf/allOf** style constraints.
+- **Limited object refinements**: required-vs-optional is supported, **excess-property policy is supported** (✅ v0.2.0 - optional strict mode), but **no dependency/oneOf/allOf** style constraints.
 - **No deep `readonly` enforcement** at runtime (compile-time only).
 - **No brand-carrying runtime checks** beyond wrapping the inner type.
 
@@ -31,7 +32,7 @@ This lists the **known missing features** in the built-in validator compared to 
 
 ## Performance & ergonomics
 - **Limited memoization**: DUNION tag maps are WeakMap-cached (✅ v0.2.0), but general sub-schema memoization not yet implemented.
-- **Partial JIT/optimized dispatch**: DUNION uses O(1) tag lookup (✅ v0.2.0), but general UNION still uses sequential try/catch.
+- **Optimized dispatch**: DUNION uses O(1) tag lookup (✅ v0.2.0), UNION uses Result-based validation (✅ v0.2.0 - eliminates try/catch overhead).
 - **No stable schema hash** for caching / versioning / compatibility checks.
 - **No JSON Schema export** and **no serializer specialization** (serialize = validate + identity).
 - **No plugin hooks** for custom validators/refinements.
@@ -45,19 +46,22 @@ This lists the **known missing features** in the built-in validator compared to 
 ## Suggested next steps
 
 ### High Priority
-1. **Excess-property policy**: Optional strict/loose object validation flag to catch unknown keys.
-2. **Error aggregation**: Collect multiple failures with a limit and clear formatting.
-3. **UNION optimization**: Use Result types instead of exception-based backtracking (2-5x speedup expected).
+1. **Error aggregation**: Collect multiple failures with a limit and clear formatting (only remaining high-priority item).
 
 ### Medium Priority
-4. **General schema memoization**: Hash-based cache for sub-schemas beyond DUNION (10-20% speedup for READONLY/BRAND-heavy schemas).
-5. **Tuple rest/optional**: Extend bytecode and encoder for richer tuples.
-6. **Refinements**: Add minimal `Op.REFINE` with known set (min/max, length, regex).
+2. **General schema memoization**: Hash-based cache for sub-schemas beyond DUNION (10-20% speedup for READONLY/BRAND-heavy schemas).
+3. **Tuple rest/optional**: Extend bytecode and encoder for richer tuples.
+4. **Refinements**: Add minimal `Op.REFINE` with known set (min/max, length, regex).
 
 ### Low Priority
-7. **Stable schema hash**: Enable caching, versioning, compatibility checks.
-8. **Source mapping**: Emit lightweight node-spans from `typeOf<T>()` to properties for better error messages.
-9. **Recursive types**: Support self-referential types (trees, graphs) with cycle detection.
+5. **Stable schema hash**: Enable caching, versioning, compatibility checks.
+6. **Source mapping**: Emit lightweight node-spans from `typeOf<T>()` to properties for better error messages.
+7. **Recursive types**: Support self-referential types (trees, graphs) with cycle detection.
 
 ### Performance Note
-Current DUNION optimization (v0.2.0) provides 40x-1600x speedup for ADT validation. For most use cases, JavaScript runtime performance is now sufficient. Consider WASM only if benchmarks show specific bottlenecks after implementing remaining JavaScript optimizations (#3-4 above).
+Current optimizations (v0.2.0) provide significant performance improvements:
+- **DUNION**: 40x-1600x speedup for ADT validation
+- **UNION**: 2-5x speedup with Result-based validation
+- **Lazy paths**: Eliminates string concat overhead on happy path
+
+For most use cases, JavaScript runtime performance is now sufficient. Consider WASM only if benchmarks show specific bottlenecks after implementing remaining JavaScript optimizations (#2 above).

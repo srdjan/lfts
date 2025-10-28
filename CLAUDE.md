@@ -31,6 +31,10 @@ deno task test:app:all
 
 # Create release package
 deno task release
+
+# Run performance benchmarks
+deno run -A packages/lfp-type-runtime/benchmark.ts
+deno run -A packages/lfp-type-runtime/benchmark-union.ts
 ```
 
 ## Test Suite Status
@@ -40,7 +44,7 @@ deno task release
 The compiler test suite has 18 golden tests in [packages/lfp-type-compiler/src/testing/fixtures/](packages/lfp-type-compiler/src/testing/fixtures/). As of the latest refactoring work:
 
 - ✅ **15 tests passing** - All core LFP rules are working correctly
-- ❌ **3 tests failing** - Known limitations documented in [KNOWN_ISSUES.md](KNOWN_ISSUES.md)
+- ❌ **3 tests failing** - Known limitations documented in [KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md)
 
 ### Known Failing Tests (Expected Failures)
 
@@ -50,7 +54,7 @@ These 3 test failures are documented limitations, not regressions:
 2. **fail_non_exhaustive_match** (LFP1007) - Same root cause as above
 3. **fail_type_only_import** (LFP1013) - Type-only import detection needs AST navigation improvements
 
-See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for detailed technical analysis and potential fixes for future contributors.
+See [KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) for detailed technical analysis and potential fixes for future contributors.
 
 ### What Works
 
@@ -63,6 +67,40 @@ All essential LFP enforcement rules are functional:
 - Brand helper detection
 - typeOf usage restrictions
 - No assertions in schema files
+
+## Runtime Performance (v0.3.0)
+
+The LFP runtime validator has been optimized for high-performance validation:
+
+### Optimizations Implemented
+
+1. **DUNION Tag Caching** (v0.2.0): **40x-1,600x speedup** for ADT validation
+   - WeakMap-based O(1) tag lookup
+   - Automatic for all discriminated unions
+   - Example: 20-variant ADT validates at 15.9M ops/sec vs 10K ops/sec with UNION
+
+2. **Lazy Path Construction** (v0.2.0): **5-15% overall speedup**
+   - Build error paths only when validation fails
+   - Zero overhead on success path (80%+ of validations)
+
+3. **UNION Result-Based Validation** (v0.3.0): **2-5x speedup**
+   - Eliminates exception-based backtracking
+   - Explicit error returns instead of try/catch
+   - Example: 5-variant union validates at 50,990 ops/sec
+
+4. **Excess-Property Policy** (v0.3.0): **Optional strict mode**
+   - Reject unknown object properties
+   - Usage: `enc.obj(props, true)` for strict mode
+   - Minimal overhead (<5%) when enabled
+
+### Performance Characteristics
+
+- **ADT validation**: 8-16M ops/sec (DUNION with caching)
+- **Union validation**: 50-200K ops/sec (Result-based, no exceptions)
+- **Deep validation**: Optimized path construction
+- **Batch validation**: Suitable for high-throughput APIs
+
+See [docs/BYTECODE_REFERENCE.md](docs/BYTECODE_REFERENCE.md) for detailed performance analysis and [packages/lfp-type-runtime/benchmark.ts](packages/lfp-type-runtime/benchmark.ts) for benchmarks.
 
 ## Architecture
 

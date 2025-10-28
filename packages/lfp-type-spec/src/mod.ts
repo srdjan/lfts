@@ -26,8 +26,8 @@ export const enc = {
   // Nested payload
   arr: (t: Bytecode): Bytecode => [Op.ARRAY, t],
   tup: (...elts: Bytecode[]): Bytecode => [Op.TUPLE, elts.length, ...elts.map(e => e)],
-  obj: (props: { name: string; type: Bytecode; optional?: boolean }[]): Bytecode => [
-    Op.OBJECT, props.length, ...props.flatMap(p => [Op.PROPERTY, p.name, p.optional ? 1 : 0, p.type]),
+  obj: (props: { name: string; type: Bytecode; optional?: boolean }[], strict?: boolean): Bytecode => [
+    Op.OBJECT, props.length, strict ? 1 : 0, ...props.flatMap(p => [Op.PROPERTY, p.name, p.optional ? 1 : 0, p.type]),
   ],
   union: (...alts: Bytecode[]): Bytecode => [Op.UNION, alts.length, ...alts],
   dunion: (tagKey: string, variants: { tag: string; schema: Bytecode }[]): Bytecode => [
