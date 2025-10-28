@@ -30,6 +30,12 @@ export const enc = {
     Op.OBJECT, props.length, ...props.flatMap(p => [Op.PROPERTY, p.name, p.optional ? 1 : 0, p.type]),
   ],
   union: (...alts: Bytecode[]): Bytecode => [Op.UNION, alts.length, ...alts],
+  dunion: (tagKey: string, variants: { tag: string; schema: Bytecode }[]): Bytecode => [
+    Op.DUNION,
+    tagKey,
+    variants.length,
+    ...variants.flatMap(v => [v.tag, v.schema]),
+  ],
   ro: (t: Bytecode): Bytecode => [Op.READONLY, t],
   brand: (t: Bytecode, tag: string): Bytecode => [Op.BRAND, tag, t],
 };

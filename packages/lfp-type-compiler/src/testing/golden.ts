@@ -1,8 +1,11 @@
 
 // packages/lfp-type-compiler/src/testing/golden.ts
+import { assertEquals } from "https://deno.land/std@0.224.0/assert/assert_equals.ts";
 import ts from "npm:typescript";
 import { runGate } from "../gate/gate.ts";
 import { runPolicy } from "../policy/engine.ts";
+import { encodeType } from "../transform/type-encoder.ts";
+import { Op } from "../../../lfp-type-spec/src/mod.ts";
 
 type Expect = { expect: "ok" } | { expect: "error"; codes?: string[] };
 
@@ -52,4 +55,27 @@ Deno.test("golden fixtures", async (t) => {
       }
     });
   }
+});
+
+Deno.test("encodeType emits DUNION for discriminated unions", () => {
+  const source = `type Expr =
+    | { type: "add"; x: number; y: number }
+    | { type: "mul"; x: number; y: number };`;
+  const sf = ts.createSourceFile("expr.ts", source, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS);
+  const alias = sf.statements.find(ts.isTypeAliasDeclaration);
+  if (!alias) throw new Error("missing type alias");
+
+  const bc = encodeType(alias.type);
+
+  assertEquals(bc[0], Op.DUNION, "expected discriminated union opcode");
+  assertEquals(bc[1], "type");
+  assertEquals(bc[2], 2);
+
+  const tags = [bc[3], bc[5]];
+  assertEquals(tags, ["add", "mul"]);
+
+  const firstVariant = bc[4] as unknown[];
+  const secondVariant = bc[6] as unknown[];
+  assertEquals(firstVariant[0], Op.OBJECT);
+  assertEquals(secondVariant[0], Op.OBJECT);
 });

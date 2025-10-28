@@ -2,9 +2,11 @@
 import ts from "npm:typescript";
 import { compileProject } from "./compiler.ts";
 
-const [srcDir, , outFlag, outDir] = Deno.args;
-if (!srcDir || outFlag !== "--outDir" || !outDir) {
-  console.error("Usage: deno run -A cli.ts <srcDir> --outDir <outDir>");
+const usage = "Usage: deno run -A cli.ts <srcDir> --outDir <outDir>";
+const [srcDir, outFlag, outDir, ...rest] = Deno.args;
+
+if (!srcDir || outFlag !== "--outDir" || !outDir || rest.length > 0) {
+  console.error(usage);
   Deno.exit(2);
 }
 

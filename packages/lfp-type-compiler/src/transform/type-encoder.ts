@@ -32,10 +32,10 @@ export function tryEncodeBrand(node: ts.IntersectionTypeNode): { bc: Bytecode } 
 
   const isStructuralBrand = (t: ts.TypeNode): string | null => {
     if (ts.isTypeLiteralNode(t)) {
-      const member = t.members.find(
-        m => ts.isPropertySignature(m) && (m.name as any)?.text === "__brand"
+      const member = t.members.find((m): m is ts.PropertySignature =>
+        ts.isPropertySignature(m) && (m.name as any)?.text === "__brand"
       );
-      if (member && member.type && ts.isLiteralTypeNode(member.type) && ts.isStringLiteral(member.type.literal)) {
+      if (member?.type && ts.isLiteralTypeNode(member.type) && ts.isStringLiteral(member.type.literal)) {
         return member.type.literal.text;
       }
     }
@@ -49,6 +49,53 @@ export function tryEncodeBrand(node: ts.IntersectionTypeNode): { bc: Bytecode } 
   if (right && !left) return { bc: enc.brand(encodeType(a), right) };
 
   return null;
+}
+
+function tryEncodeDiscriminatedUnion(node: ts.UnionTypeNode): Bytecode | null {
+  if (node.types.length < 2) return null;
+
+  const variants: { tag: string; schema: Bytecode }[] = [];
+  const seenTags = new Set<string>();
+  let tagKey: string | null = null;
+
+  for (const member of node.types) {
+    if (!ts.isTypeLiteralNode(member)) {
+      return null;
+    }
+
+    let variantTag: string | null = null;
+
+    for (const m of member.members) {
+      if (!ts.isPropertySignature(m) || !m.type || !m.name) continue;
+      if (m.questionToken) continue;
+      if (!ts.isLiteralTypeNode(m.type) || !ts.isStringLiteral(m.type.literal)) continue;
+
+      const propName = getPropName(m.name);
+      if (!propName || propName === "???") continue;
+
+      if (tagKey === null) {
+        tagKey = propName;
+      }
+
+      if (propName !== tagKey) continue;
+
+      variantTag = m.type.literal.text;
+      break;
+    }
+
+    if (variantTag === null) return null;
+
+    const tagValue = variantTag;
+    if (seenTags.has(tagValue)) {
+      return null;
+    }
+    seenTags.add(tagValue);
+    variants.push({ tag: tagValue, schema: encodeType(member) });
+  }
+
+  if (!tagKey) return null;
+
+  return enc.dunion(tagKey, variants);
 }
 
 /**
@@ -98,8 +145,12 @@ export function encodeType(node: ts.TypeNode): Bytecode {
       return enc.obj(props);
     }
 
-    case ts.SyntaxKind.UnionType:
-      return enc.union(...(node as ts.UnionTypeNode).types.map(encodeType));
+    case ts.SyntaxKind.UnionType: {
+      const unionNode = node as ts.UnionTypeNode;
+      const dunion = tryEncodeDiscriminatedUnion(unionNode);
+      if (dunion) return dunion;
+      return enc.union(...unionNode.types.map(encodeType));
+    }
 
     case ts.SyntaxKind.ParenthesizedType:
       return encodeType((node as ts.ParenthesizedTypeNode).type);
