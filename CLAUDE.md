@@ -208,7 +208,7 @@ To add a test:
 
 ### Known Limitations
 
-See [VALIDATOR_GAPS.md](VALIDATOR_GAPS.md) for runtime validator limitations:
+See [VALIDATOR_GAPS.md](docs/VALIDATOR_GAPS.md) for runtime validator limitations:
 - No recursive/self-referential types
 - No generics, mapped/conditional types
 - No refinements (min/max, regex, etc.)
@@ -273,7 +273,7 @@ See [VALIDATOR_GAPS.md](VALIDATOR_GAPS.md) for runtime validator limitations:
 
 ## Language Specification
 
-Full spec in [LANG-SPEC.md](LANG-SPEC.md). Key points:
+Full spec in [LANG-SPEC.md](docs/LANG-SPEC.md). Key points:
 
 - **Allowed**: primitives, arrays, tuples, objects, unions, readonly, intersections (for branding only)
 - **Disallowed**: classes, decorators, `this`, mapped/conditional types, generics (in schemas)

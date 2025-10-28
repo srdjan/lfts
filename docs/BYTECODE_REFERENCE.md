@@ -336,13 +336,13 @@ When validating `{ type: "circle", radius: 10 }` against the DUNION schema:
 
 ### Phase 1: JavaScript Runtime Optimizations ✅ IMPLEMENTED
 
-**Status**: Optimizations 1 and 2 are implemented as of v0.2.0. See [packages/lfp-type-runtime/mod.ts](packages/lfp-type-runtime/mod.ts) for implementation.
+**Status**: Optimizations 1 and 2 are implemented as of v0.2.0. See [packages/lfp-type-runtime/mod.ts](../packages/lfp-type-runtime/mod.ts) for implementation.
 
 ---
 
 **1. DUNION Tag Map Caching (High Impact)** ✅ **IMPLEMENTED**
 
-**Implementation** ([packages/lfp-type-runtime/mod.ts](packages/lfp-type-runtime/mod.ts:43-59)):
+**Implementation** ([packages/lfp-type-runtime/mod.ts](../packages/lfp-type-runtime/mod.ts:43-59)):
 ```typescript
 // WeakMap keyed by bytecode array reference for O(1) lookup
 const dunionCache = new WeakMap<any[], Map<string, any[]>>();
@@ -391,7 +391,7 @@ throw new VError(buildPath(pathSegments), `unexpected tag ${JSON.stringify(vTag)
 
 **2. Lazy Path Construction (Medium Impact)** ✅ **IMPLEMENTED**
 
-**Implementation** ([packages/lfp-type-runtime/mod.ts](packages/lfp-type-runtime/mod.ts:34-50)):
+**Implementation** ([packages/lfp-type-runtime/mod.ts](../packages/lfp-type-runtime/mod.ts:34-50)):
 ```typescript
 // Path segment type for lazy path construction
 type PathSegment = string | number;
