@@ -1,4 +1,4 @@
-# Light-FP Language Spec (Iteration 1)
+# Light-FP Language Spec
 
 ## Goals
 - Provide a **minimal** TypeScript subset suitable for **pure, light functional** programming.

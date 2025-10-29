@@ -1,6 +1,6 @@
-# Light-FP Type Compiler — Iteration 1 (Deno-only)
+# Light-FP Type Compiler (Deno-only)
 
-This is **Iteration‑1** of a minimal Light‑FP TypeScript compiler that:
+This is an experimental prototype of a minimal Light‑FP TypeScript compiler that:
 - Enforces the **Light Functional** subset (no OOP, no decorators, no `this`, no mapped/conditional types).
 - Compiles `typeOf<T>()` sites into **Deepkit-compatible bytecode** literals (Deno-only build task).
 - Performs **compiler-only policy enforcement** (no linter): ports/capabilities discipline and data-only schemas.
@@ -43,12 +43,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full Light-FP guidelines.
 See **LANG-SPEC.md** for the minimal language surface and **guide.mmd** for the engineering guide.
 
 
-## New in Iteration-1 ADT update
+## New in v0.3.0: ADT update
 - **Strict ADT discriminant**: the only allowed tag is `'type'` (policy `LFP1006`).
 - **Exhaustive ADT matching**: `match(value, cases)` helper + compiler policy `LFP1007` enforce all variants are handled (no missing or extra tags).
 
 
-## Canonical Single Syntax (Iteration‑1)
+## Canonical Single Syntax
 To keep the subset minimal and uniform:
 
 - Data objects: **`type` aliases** only (interfaces are reserved for `@port`).  

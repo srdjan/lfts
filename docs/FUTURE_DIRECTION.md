@@ -1586,19 +1586,19 @@ const remoteUser$ = await rpcBridge.fetchSchema("User");
 
 ## Implementation Sequencing Recommendation
 
-### Iteration 2 (Next Release)
+### Release v0.4.0
 - B8: Error Aggregation
 - B11: Compile-Time Schema Validation
 - B7: Incremental Compilation
 - Phase 1 Enhancements: Async Result, Pipeline tracing
 
-### Iteration 3 (Following Release)
+### Release v0.5.0
 - B1: Schema-Driven Code Generation
 - B6: Schema Composition Operators
 - B5: Branded Newtypes with Validation
 - Phase 2 Enhancements: Port mocking, Cache eviction
 
-### Iteration 4 (Future)
+### Release v0.6.0
 - B2: Compile-Time Refinements
 - B3: Port Adapter Auto-Generation
 - B4: Transactional State Updates

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a **Light-FP TypeScript compiler** (Iteration 1) that enforces a minimal functional programming subset and compiles `typeOf<T>()` calls into Deepkit-compatible bytecode literals. The compiler performs three passes:
+This is a **Light-FP TypeScript compiler** prototype that enforces a minimal functional programming subset and compiles `typeOf<T>()` calls into Deepkit-compatible bytecode literals. The compiler performs three passes:
 
 1. **Gate pass** - Rejects disallowed syntax (OOP constructs, decorators, mapped/conditional types)
 2. **Policy pass** - Enforces semantic rules (ports discipline, data-only schemas, canonical forms)

@@ -48,7 +48,7 @@ Each type description is a directed tree whose nodes are drawn from the `Op` enu
   - Refinements are composable and can be nested (e.g., `REFINE_MIN(REFINE_MAX(NUMBER))`)
   - Compatible with wrappers: `READONLY(REFINE_MIN(...))` and `BRAND(..., REFINE_MIN(...))`
   - Note: Regex refinements are NOT supported by design (LFP language limitation)
-- Any unsupported TypeScript construct must materialise as a well-defined **diagnostic node**. Iteration 1 uses `LITERAL` with a descriptive string (e.g., `"/*unsupported intersection*/"`); future revisions may introduce a dedicated `ERROR` node.
+- Any unsupported TypeScript construct must materialise as a well-defined **diagnostic node**. Current iteration uses `LITERAL` with a descriptive string (e.g., `"/*unsupported intersection*/"`); future revisions may introduce a dedicated `ERROR` node.
 
 ## Emission Behaviour
 
@@ -349,7 +349,7 @@ When validating `{ type: "circle", radius: 10 }` against the DUNION schema:
 
 ## Optimization Opportunities
 
-### Phase 1: JavaScript Runtime Optimizations ✅ IMPLEMENTED
+### JavaScript Runtime Optimizations ✅ IMPLEMENTED
 
 **Status**: Optimizations 1 and 2 are implemented as of v0.2.0. See [packages/lfp-type-runtime/mod.ts](../packages/lfp-type-runtime/mod.ts) for implementation.
 

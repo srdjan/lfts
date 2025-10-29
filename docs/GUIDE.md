@@ -1,4 +1,4 @@
-# Engineering Guide (Iteration 1)
+# Engineering Guide
 
 ## Build Flow
 ```
@@ -23,7 +23,7 @@ parse → LFP Gate (syntax bans)
 - Add rules under `packages/lfp-type-compiler/src/policy/rules/` and register them in `engine.ts`.
 - Extend the encoder when you expand the allowed type surface (e.g., generics, enums-as-unions helper).
 
-## Limitations (Iteration 1)
+## Limitations
 - No generics in schemas, no mapped/conditional types.
 - `typeOf<T>()` only in initializer sites.
 - No function metadata (`.__type`). Only explicit schema constants.
