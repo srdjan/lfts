@@ -1,0 +1,7 @@
+{
+  "expected": [
+    { "id": "LFP1020", "message": "Consider using Result/Option combinators" },
+    { "id": "LFP1020", "message": "Consider using Result/Option combinators" },
+    { "id": "LFP1020", "message": "Consider using Result/Option combinators" }
+  ]
+}

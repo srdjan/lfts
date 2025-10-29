@@ -2,7 +2,7 @@
 import ts from "npm:typescript";
 import { formatCodeFrame } from "../diag.ts";
 
-export type Severity = 'error';
+export type Severity = 'error' | 'warning';
 
 export interface RuleMeta<Opts = unknown> {
   id: string;
@@ -16,7 +16,7 @@ export interface RuleContext<Opts = unknown> {
   program: ts.Program;
   checker: ts.TypeChecker;
   options: any;
-  report(node: ts.Node, message: string): void;
+  report(node: ts.Node, message: string, severity?: Severity): void;
   classify: {
     markPort(sym: ts.Symbol): void;
     isPort(sym: ts.Symbol): boolean;
@@ -48,10 +48,14 @@ export function createContext(program: ts.Program, checker: ts.TypeChecker) {
     program,
     checker,
     options: cfg,
-    report(node, message) {
+    report(node, message, severity = 'error') {
       const sf = node.getSourceFile();
+      const category = severity === 'warning'
+        ? ts.DiagnosticCategory.Warning
+        : ts.DiagnosticCategory.Error;
+
       state.diagnostics.push({
-        category: ts.DiagnosticCategory.Error,
+        category,
         code: 1,
         file: sf,
         start: node.getStart(),
@@ -89,6 +93,7 @@ import { typeOfOnlyInSchemaFilesRule } from "./rules/typeOf-only-in-schema-files
 import { portMethodSignaturesOnlyRule } from "./rules/port-method-signatures-only.ts";
 import { typeOnlyImportsRule } from "./rules/type-only-imports.ts";
 import { noAsAssertionsInSchemaFilesRule } from "./rules/no-as-assertions-in-schema-files.ts";
+import { noImperativeBranchingRule } from "./rules/no-imperative-branching.ts";
 
 rules.push(
   portInterfaceRule,
@@ -104,7 +109,8 @@ rules.push(
   typeOfOnlyInSchemaFilesRule,
   portMethodSignaturesOnlyRule,
   typeOnlyImportsRule,
-  noAsAssertionsInSchemaFilesRule
+  noAsAssertionsInSchemaFilesRule,
+  noImperativeBranchingRule  // Phase 1.1: Result/Option combinators
 );
 
 

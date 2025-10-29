@@ -21,8 +21,8 @@ async function analyzeFixture(dir: string) {
     moduleResolution: ts.ModuleResolutionKind.Node10,
   });
   const checker = program.getTypeChecker();
-  const gate = runGate(program);
-  const policy = runPolicy(program, checker);
+  const gate = runGate(program, srcDir);
+  const policy = runPolicy(program, checker, srcDir);
   const all = [...gate, ...policy];
   const codes = all.map(d => String(d.messageText));
   return { diags: all, codes };

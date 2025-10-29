@@ -15,10 +15,12 @@ const bannedSyntax = new Set([
   ts.SyntaxKind.EnumDeclaration,
 ]);
 
-export function runGate(program: ts.Program): readonly ts.Diagnostic[] {
+export function runGate(program: ts.Program, srcDir: string): readonly ts.Diagnostic[] {
+  // Normalize srcDir: ensure trailing slash and remove duplicate slashes
+  const normalizedSrcDir = (srcDir.endsWith('/') ? srcDir : srcDir + '/').replace(/\/+/g, '/');
   return program
     .getSourceFiles()
-    .filter(sf => !sf.isDeclarationFile)
+    .filter(sf => !sf.isDeclarationFile && sf.fileName.startsWith(normalizedSrcDir))
     .flatMap(sf => checkSourceFile(sf));
 }
 

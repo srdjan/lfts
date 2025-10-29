@@ -19,12 +19,12 @@ export async function compileProject({ srcDir, outDir }: Options): Promise<numbe
   });
   const checker = program.getTypeChecker();
 
-  // 1) Gate (syntax bans)
-  const gateDiags = runGate(program);
+  // 1) Gate (syntax bans) - only check files in srcDir
+  const gateDiags = runGate(program, srcDir);
   if (gateDiags.length) return printDiagsAndExit("Gate", gateDiags);
 
-  // 2) Policy (semantic rules)
-  const policyDiags = runPolicy(program, checker);
+  // 2) Policy (semantic rules) - only check files in srcDir
+  const policyDiags = runPolicy(program, checker, srcDir);
   if (policyDiags.length) return printDiagsAndExit("Policy", policyDiags);
 
   // 3) Transform (typeOf<T>() → bytecode literal)

@@ -17,6 +17,11 @@ export type Result<T, E> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: E };
 
+// Option type for optional values (Phase 1)
+export type Option<T> =
+  | { readonly some: true; readonly value: T }
+  | { readonly some: false };
+
 // Validation error with path context
 export type ValidationError = {
   readonly path: string;
@@ -411,6 +416,63 @@ function validateWithResult(bc: any[], value: unknown, pathSegments: PathSegment
       return value.length > maxItems
         ? createVError(buildPath(pathSegments), `expected array length <= ${maxItems}, got ${value.length}`)
         : null;
+    })
+    // Phase 1: Result/Option validators
+    .with(Op.RESULT_OK, () => {
+      // Validate Result.ok structure: { ok: true, value: T }
+      if (!value || typeof value !== 'object' || !('ok' in value)) {
+        return createVError(buildPath(pathSegments), 'expected Result type');
+      }
+      const resultValue = value as any;
+      if (resultValue.ok !== true) {
+        return createVError(buildPath(pathSegments), 'expected Result.ok');
+      }
+      const valueSchema = bc[1];
+      pathSegments.push('value');
+      const err = validateWithResult(valueSchema, resultValue.value, pathSegments, depth + 1);
+      pathSegments.pop();
+      return err;
+    })
+    .with(Op.RESULT_ERR, () => {
+      // Validate Result.err structure: { ok: false, error: E }
+      if (!value || typeof value !== 'object' || !('ok' in value)) {
+        return createVError(buildPath(pathSegments), 'expected Result type');
+      }
+      const resultValue = value as any;
+      if (resultValue.ok !== false) {
+        return createVError(buildPath(pathSegments), 'expected Result.err');
+      }
+      const errorSchema = bc[1];
+      pathSegments.push('error');
+      const err = validateWithResult(errorSchema, resultValue.error, pathSegments, depth + 1);
+      pathSegments.pop();
+      return err;
+    })
+    .with(Op.OPTION_SOME, () => {
+      // Validate Option.some structure: { some: true, value: T }
+      if (!value || typeof value !== 'object' || !('some' in value)) {
+        return createVError(buildPath(pathSegments), 'expected Option type');
+      }
+      const optionValue = value as any;
+      if (optionValue.some !== true) {
+        return createVError(buildPath(pathSegments), 'expected Option.some');
+      }
+      const valueSchema = bc[1];
+      pathSegments.push('value');
+      const err = validateWithResult(valueSchema, optionValue.value, pathSegments, depth + 1);
+      pathSegments.pop();
+      return err;
+    })
+    .with(Op.OPTION_NONE, () => {
+      // Validate Option.none structure: { some: false }
+      if (!value || typeof value !== 'object' || !('some' in value)) {
+        return createVError(buildPath(pathSegments), 'expected Option type');
+      }
+      const optionValue = value as any;
+      if (optionValue.some !== false) {
+        return createVError(buildPath(pathSegments), 'expected Option.none');
+      }
+      return null;
     })
     .otherwise(() => createVError(buildPath(pathSegments), `unsupported opcode ${op}`));
 }
@@ -842,3 +904,190 @@ export function match<T extends { type: string }, R>(
   }
   return handler(value as any);
 }
+
+// ============================================================================
+// Phase 1: Result/Option Combinators
+// ============================================================================
+
+/**
+ * Result combinator namespace for functional error handling.
+ * Provides map, andThen, mapErr, and other combinators for composing
+ * Result-returning functions without manual if/else branching.
+ */
+export const Result = {
+  /**
+   * Create a successful Result with a value.
+   */
+  ok<T, E = never>(value: T): Result<T, E> {
+    return { ok: true, value };
+  },
+
+  /**
+   * Create a failed Result with an error.
+   */
+  err<T = never, E = unknown>(error: E): Result<T, E> {
+    return { ok: false, error };
+  },
+
+  /**
+   * Transform the value inside a successful Result.
+   * If the Result is an error, returns the error unchanged.
+   */
+  map<T, U, E>(
+    result: Result<T, E>,
+    fn: (value: T) => U
+  ): Result<U, E> {
+    return result.ok ? Result.ok(fn(result.value)) : result;
+  },
+
+  /**
+   * Chain Result-returning functions together.
+   * Short-circuits on the first error.
+   */
+  andThen<T, U, E>(
+    result: Result<T, E>,
+    fn: (value: T) => Result<U, E>
+  ): Result<U, E> {
+    return result.ok ? fn(result.value) : result;
+  },
+
+  /**
+   * Transform the error inside a failed Result.
+   * If the Result is successful, returns it unchanged.
+   */
+  mapErr<T, E, F>(
+    result: Result<T, E>,
+    fn: (error: E) => F
+  ): Result<T, F> {
+    return result.ok ? result : Result.err(fn(result.error));
+  },
+
+  /**
+   * Apply a predicate to the value and convert to error if it fails.
+   * Returns a function that can be used in andThen chains.
+   * If the input Result is already an error, it is returned unchanged.
+   */
+  ensure<T, E>(
+    predicate: (value: T) => boolean,
+    error: E
+  ): (result: Result<T, E>) => Result<T, E> {
+    return (result) => {
+      if (!result.ok) return result; // Preserve existing error
+      return predicate(result.value) ? result : Result.err(error);
+    };
+  },
+
+  /**
+   * Unwrap a Result value or provide a default.
+   */
+  unwrapOr<T, E>(result: Result<T, E>, defaultValue: T): T {
+    return result.ok ? result.value : defaultValue;
+  },
+
+  /**
+   * Check if a Result is successful.
+   */
+  isOk<T, E>(result: Result<T, E>): result is { ok: true; value: T } {
+    return result.ok;
+  },
+
+  /**
+   * Check if a Result is an error.
+   */
+  isErr<T, E>(result: Result<T, E>): result is { ok: false; error: E } {
+    return !result.ok;
+  },
+};
+
+/**
+ * Option combinator namespace for optional values.
+ * Provides map, andThen, okOr, and other combinators for working with
+ * optional values without null checks.
+ */
+export const Option = {
+  /**
+   * Create an Option with a value.
+   */
+  some<T>(value: T): Option<T> {
+    return { some: true, value };
+  },
+
+  /**
+   * Create an empty Option.
+   */
+  none<T>(): Option<T> {
+    return { some: false };
+  },
+
+  /**
+   * Safely get the first element of an array.
+   */
+  first<T>(arr: readonly T[]): Option<T> {
+    return arr.length > 0 ? Option.some(arr[0]) : Option.none();
+  },
+
+  /**
+   * Create an Option from a nullable value.
+   */
+  from<T>(value: T | null | undefined): Option<T> {
+    return value != null ? Option.some(value) : Option.none();
+  },
+
+  /**
+   * Transform the value inside an Option.
+   * If the Option is empty, returns empty Option.
+   */
+  map<T, U>(option: Option<T>, fn: (value: T) => U): Option<U> {
+    return option.some ? Option.some(fn(option.value)) : Option.none();
+  },
+
+  /**
+   * Chain Option-returning functions together.
+   * Short-circuits on the first empty Option.
+   */
+  andThen<T, U>(option: Option<T>, fn: (value: T) => Option<U>): Option<U> {
+    return option.some ? fn(option.value) : Option.none();
+  },
+
+  /**
+   * Convert an Option to a Result, providing an error value for None.
+   */
+  okOr<T, E>(option: Option<T>, error: E): Result<T, E> {
+    return option.some ? Result.ok(option.value) : Result.err(error);
+  },
+
+  /**
+   * Unwrap an Option value or provide a default.
+   */
+  unwrapOr<T>(option: Option<T>, defaultValue: T): T {
+    return option.some ? option.value : defaultValue;
+  },
+
+  /**
+   * Check if an Option has a value.
+   */
+  isSome<T>(option: Option<T>): option is { some: true; value: T } {
+    return option.some;
+  },
+
+  /**
+   * Check if an Option is empty.
+   */
+  isNone<T>(option: Option<T>): option is { some: false } {
+    return !option.some;
+  },
+
+  /**
+   * Combine multiple Options into one. All must have values.
+   */
+  zip<T extends readonly unknown[]>(
+    ...options: { [K in keyof T]: Option<T[K]> }
+  ): Option<T> {
+    const values: any[] = [];
+    for (const opt of options) {
+      if (!Option.isSome(opt)) return Option.none();
+      values.push(opt.value);
+    }
+    return Option.some(values as any);
+  },
+};

@@ -15,6 +15,9 @@ export enum Op {
   REFINE_MIN, REFINE_MAX, REFINE_INTEGER,
   REFINE_MIN_LENGTH, REFINE_MAX_LENGTH,
   REFINE_MIN_ITEMS, REFINE_MAX_ITEMS,
+  // result/option combinators (Phase 1)
+  RESULT_OK, RESULT_ERR,
+  OPTION_SOME, OPTION_NONE,
 }
 
 export type Bytecode = any[]; // nested tuples/arrays
@@ -52,5 +55,15 @@ export const enc = {
     maxLength: (t: Bytecode, len: number): Bytecode => [Op.REFINE_MAX_LENGTH, len, t],
     minItems: (t: Bytecode, count: number): Bytecode => [Op.REFINE_MIN_ITEMS, count, t],
     maxItems: (t: Bytecode, count: number): Bytecode => [Op.REFINE_MAX_ITEMS, count, t],
+  },
+
+  // result/option combinators (Phase 1)
+  result: {
+    ok: (valueType: Bytecode): Bytecode => [Op.RESULT_OK, valueType],
+    err: (errorType: Bytecode): Bytecode => [Op.RESULT_ERR, errorType],
+  },
+  option: {
+    some: (valueType: Bytecode): Bytecode => [Op.OPTION_SOME, valueType],
+    none: (): Bytecode => [Op.OPTION_NONE],
   },
 };

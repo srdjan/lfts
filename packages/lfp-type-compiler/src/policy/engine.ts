@@ -2,12 +2,14 @@
 import ts from "npm:typescript";
 import { createContext, Rule, rules } from "./context.ts";
 
-export function runPolicy(program: ts.Program, checker: ts.TypeChecker): ts.Diagnostic[] {
+export function runPolicy(program: ts.Program, checker: ts.TypeChecker, srcDir: string): ts.Diagnostic[] {
   const ctx = createContext(program, checker);
   const diags: ts.Diagnostic[] = [];
+  // Normalize srcDir: ensure trailing slash and remove duplicate slashes
+  const normalizedSrcDir = (srcDir.endsWith('/') ? srcDir : srcDir + '/').replace(/\/+/g, '/');
 
   for (const sf of program.getSourceFiles()) {
-    if (sf.isDeclarationFile) continue;
+    if (sf.isDeclarationFile || !sf.fileName.startsWith(normalizedSrcDir)) continue;
     const visit = (node: ts.Node) => {
       // declaration phase
       if (ts.isInterfaceDeclaration(node)) {
