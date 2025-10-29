@@ -1,0 +1,24 @@
+#!/bin/bash
+# Pre-commit hook to prevent OOP constructs in Light-FP codebase
+#
+# To install this hook, run:
+#   ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
+#   chmod +x scripts/pre-commit
+
+set -e
+
+echo "Running Light-FP OOP safeguard checks..."
+
+# Run the OOP checker on staged files
+if ! deno run -A scripts/check-no-oop.ts; then
+  echo ""
+  echo "❌ Commit rejected: OOP constructs detected"
+  echo "Please remove OOP patterns and use Light-FP style instead."
+  echo ""
+  echo "To bypass this check (NOT recommended), use:"
+  echo "  git commit --no-verify"
+  exit 1
+fi
+
+echo "✅ All checks passed"
+exit 0

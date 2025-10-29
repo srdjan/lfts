@@ -2,7 +2,20 @@
   "imports": {
     "ts-pattern": "npm:ts-pattern@^5.0.0"
   },
+  "lint": {
+    "rules": {
+      "exclude": ["no-explicit-any", "no-unused-vars", "no-unversioned-import", "ban-ts-comment", "no-deprecated-deno-api"],
+      "tags": ["recommended"]
+    },
+    "exclude": [
+      "packages/lfp-type-compiler/src/testing/fixtures/",
+      "dist/",
+      "node_modules/"
+    ]
+  },
   "tasks": {
+    "lint": "deno lint && deno run -A scripts/check-no-oop.ts",
+    "lint:fix": "deno lint --fix",
     "build": "deno run -A packages/lfp-type-compiler/src/cli.ts deno_example/src --outDir dist",
     "start": "deno run -A dist/main.js",
     "test": "deno test -A packages/lfp-type-compiler/src/testing/golden.ts",

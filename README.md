@@ -20,9 +20,25 @@ deno_example/              # minimal demo wired via deno tasks
 ```sh
 deno task build     # runs compiler (gate + policy + transform) on deno_example/src → dist
 deno task start     # runs dist/main.js
+deno task lint      # lint + check for OOP constructs
 ```
 
 If any **policy or gate** violation is found, `deno task build` exits non‑zero with diagnostics.
+
+## OOP Safeguards
+
+This codebase strictly enforces **Light-FP principles** and prohibits all OOP constructs:
+
+- ❌ No `class`, `extends`, `implements`, `this`, `super`, `constructor`
+- ✅ Pure functions, type aliases, and functional patterns only
+
+**Multiple layers of protection:**
+1. **Deno Lint** - `deno task lint` checks before commit
+2. **Pre-commit Hook** - Install with `./scripts/install-hooks.sh`
+3. **CI Pipeline** - GitHub Actions runs checks on all PRs
+4. **Custom Checker** - `scripts/check-no-oop.ts` scans entire codebase
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full Light-FP guidelines.
 
 See **LANG-SPEC.md** for the minimal language surface and **guide.mmd** for the engineering guide.
 

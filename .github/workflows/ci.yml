@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint & OOP Safeguards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Run Deno Lint
+        run: deno lint
+
+      - name: Check for OOP constructs
+        run: deno run -A scripts/check-no-oop.ts
+
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Run compiler tests
+        run: deno task test
+
+      - name: Build example project
+        run: deno task build
+
+      - name: Run demo CLI tests
+        run: deno task test:app
+
+  light-fp-compliance:
+    name: Light-FP Compliance Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Verify no OOP constructs in packages
+        run: |
+          echo "Checking packages directory..."
+          if grep -r '\bclass\s' packages/ --include="*.ts" --exclude-dir=fixtures; then
+            echo "❌ Found class declarations outside test fixtures"
+            exit 1
+          fi
+          echo "✅ No class declarations found"
+
+      - name: Verify no OOP constructs in examples
+        run: |
+          echo "Checking example directories..."
+          if grep -r '\bclass\s' deno_example/ demo_cli/ --include="*.ts" 2>/dev/null; then
+            echo "❌ Found class declarations in examples"
+            exit 1
+          fi
+          echo "✅ No class declarations in examples"
+
+      - name: Run comprehensive OOP check
+        run: deno run -A scripts/check-no-oop.ts
