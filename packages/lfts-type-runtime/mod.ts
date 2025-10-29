@@ -798,6 +798,13 @@ function validateWithResult(
       }
       return null;
     })
+    // Phase 1.2: Metadata wrapper (transparent pass-through)
+    .with(Op.METADATA, () => {
+      // METADATA format: [Op.METADATA, metadata, innerSchema]
+      // Just validate the inner schema, ignoring metadata
+      const innerSchema = bc[2];
+      return validateWithResult(innerSchema, value, pathSegments, depth);
+    })
     .otherwise(() =>
       createVError(buildPath(pathSegments), `unsupported opcode ${op}`)
     );
@@ -1391,6 +1398,13 @@ function collectErrors(
         }
       }
     })
+    // Phase 1.2: Metadata wrapper (transparent pass-through)
+    .with(Op.METADATA, () => {
+      // METADATA format: [Op.METADATA, metadata, innerSchema]
+      // Just validate the inner schema, ignoring metadata
+      const innerSchema = bc[2];
+      collectErrors(innerSchema, value, pathSegments, depth, errors, maxErrors);
+    })
     .otherwise(() => {
       errors.push({
         path: buildPath(pathSegments),
@@ -1606,3 +1620,223 @@ export const Option = {
     return Option.some(values as any);
   },
 };
+
+// ============================================================================
+// Phase 1.2: Runtime Introspection Hooks
+// ============================================================================
+
+/**
+ * Metadata extracted from a schema with introspection support.
+ */
+export type SchemaMetadata = {
+  readonly name?: string;
+  readonly source?: string;
+};
+
+/**
+ * Introspection context provided to hook callbacks.
+ * Allows observing validation events without mutating data.
+ */
+export type InspectionContext<T> = {
+  readonly schemaName?: string;
+  readonly schemaSource?: string;
+
+  /**
+   * Register a callback to be invoked when validation fails.
+   * Receives the validation error details.
+   */
+  onFailure: (callback: (error: ValidationError) => void) => void;
+
+  /**
+   * Register a callback to be invoked when validation succeeds.
+   * Receives the validated value (snapshot, not the actual value).
+   */
+  onSuccess: (callback: (value: T) => void) => void;
+};
+
+/**
+ * Schema wrapper with introspection support.
+ * Provides the same validation API with added observability hooks.
+ */
+export type InspectableSchema<T> = {
+  readonly schema: TypeObject;
+  readonly metadata: SchemaMetadata;
+
+  /**
+   * Validate with Result-based error handling.
+   */
+  validate: (value: unknown) => Result<T, ValidationError>;
+
+  /**
+   * Validate with throwing behavior.
+   */
+  validateUnsafe: (value: unknown) => T;
+
+  /**
+   * Validate and collect all errors (up to maxErrors).
+   */
+  validateAll: (value: unknown, maxErrors?: number) => ValidationResult<T>;
+};
+
+/**
+ * Extract metadata from a schema if it has a METADATA wrapper.
+ * Returns null if no metadata is present.
+ */
+function extractMetadata(schema: TypeObject): SchemaMetadata | null {
+  if (!Array.isArray(schema) || schema.length < 2) return null;
+  if (schema[0] !== Op.METADATA) return null;
+  return schema[1] as SchemaMetadata;
+}
+
+/**
+ * Unwrap METADATA wrapper to get the inner schema.
+ */
+function unwrapMetadata(schema: TypeObject): any[] {
+  if (!Array.isArray(schema) || schema.length < 3) return schema as any[];
+  if (schema[0] !== Op.METADATA) return schema as any[];
+  return schema[2] as any[];
+}
+
+/**
+ * Create an inspectable schema wrapper with observability hooks.
+ *
+ * @param schema - The bytecode schema (may have METADATA wrapper)
+ * @param configure - Optional configuration function to register hooks
+ * @returns InspectableSchema with validation methods
+ *
+ * @example
+ * ```ts
+ * const OrderSchema = inspect(Order$, (ctx) => {
+ *   ctx.onFailure((error) => {
+ *     logger.warn('Order validation failed', {
+ *       schema: ctx.schemaName,
+ *       error
+ *     });
+ *   });
+ * });
+ *
+ * const result = OrderSchema.validate(data);
+ * ```
+ */
+export function inspect<T>(
+  schema: TypeObject,
+  configure?: (ctx: InspectionContext<T>) => void,
+): InspectableSchema<T> {
+  const metadata = extractMetadata(schema) || {};
+  const innerSchema = unwrapMetadata(schema);
+
+  // Hook storage
+  const onSuccessCallbacks: Array<(value: T) => void> = [];
+  const onFailureCallbacks: Array<(error: ValidationError) => void> = [];
+
+  // Build context object
+  const context: InspectionContext<T> = {
+    schemaName: metadata.name,
+    schemaSource: metadata.source,
+    onSuccess: (callback) => {
+      onSuccessCallbacks.push(callback);
+    },
+    onFailure: (callback) => {
+      onFailureCallbacks.push(callback);
+    },
+  };
+
+  // Allow user to configure hooks
+  if (configure) {
+    configure(context);
+  }
+
+  // Helper to trigger success hooks
+  const triggerSuccess = (value: T) => {
+    for (const callback of onSuccessCallbacks) {
+      try {
+        callback(value);
+      } catch (err) {
+        // Swallow hook errors to prevent breaking validation flow
+        console.error('Introspection hook error (onSuccess):', err);
+      }
+    }
+  };
+
+  // Helper to trigger failure hooks
+  const triggerFailure = (error: ValidationError) => {
+    for (const callback of onFailureCallbacks) {
+      try {
+        callback(error);
+      } catch (err) {
+        // Swallow hook errors to prevent breaking validation flow
+        console.error('Introspection hook error (onFailure):', err);
+      }
+    }
+  };
+
+  return {
+    schema: innerSchema,
+    metadata,
+
+    validate: (value: unknown): Result<T, ValidationError> => {
+      const result = validateSafe<T>(innerSchema, value);
+      if (result.ok) {
+        triggerSuccess(result.value);
+      } else {
+        triggerFailure(result.error);
+      }
+      return result;
+    },
+
+    validateUnsafe: (value: unknown): T => {
+      try {
+        const validated = validate(innerSchema, value) as T;
+        triggerSuccess(validated);
+        return validated;
+      } catch (err) {
+        // Convert error to ValidationError and trigger hook
+        // The error from validate() is a regular Error with "path: message" format
+        if (err instanceof Error && err.name === "ValidationError") {
+          // Parse "path: message" format from fullMessage
+          // If no colon, path is empty and message is the whole thing
+          const match = err.message.match(/^([^:]*): (.*)$/);
+          const error: ValidationError = match
+            ? { path: match[1], message: match[2] }
+            : { path: "", message: err.message };
+          triggerFailure(error);
+        }
+        throw err;
+      }
+    },
+
+    validateAll: (value: unknown, maxErrors = 100): ValidationResult<T> => {
+      const result = validateAll<T>(innerSchema, value, maxErrors);
+      if (result.ok) {
+        triggerSuccess(result.value);
+      } else if (result.errors.length > 0) {
+        // Trigger failure hook with first error for simplicity
+        triggerFailure(result.errors[0]);
+      }
+      return result;
+    },
+  };
+}
+
+/**
+ * Attach metadata to a schema for introspection.
+ * This is typically used by the compiler, but can be used manually.
+ *
+ * @param schema - The bytecode schema
+ * @param metadata - Schema metadata (name, source location, etc.)
+ * @returns Schema wrapped with metadata
+ *
+ * @example
+ * ```ts
+ * const User$ = withMetadata(userSchema, {
+ *   name: 'User',
+ *   source: 'src/types/user.schema.ts'
+ * });
+ * ```
+ */
+export function withMetadata(
+  schema: TypeObject,
+  metadata: SchemaMetadata,
+): TypeObject {
+  return [Op.METADATA, metadata, schema];
+}

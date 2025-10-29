@@ -9,13 +9,15 @@ subset so bytecode contains only canonical data constructs (primitives, objects,
 unions, brands, readonly wrappers). The runtime is therefore a **lean validation
 VM** with Result-based APIs and DUNION-powered discriminant dispatch.
 
-**Already Implemented (v0.3.0):**
-- Result/Option combinators with full API
-- LFP1020 policy rule for imperative branching detection
-- DUNION tag caching for ADT validation
-- Lazy path construction optimization
-- Union result-based validation
-- Optional strict excess-property checking
+**Already Implemented (v0.4.0):**
+- Result/Option combinators with full API (v0.3.0)
+- LFP1020 policy rule for imperative branching detection (v0.3.0)
+- DUNION tag caching for ADT validation (v0.2.0)
+- Lazy path construction optimization (v0.2.0)
+- Union result-based validation (v0.3.0)
+- Optional strict excess-property checking (v0.3.0)
+- Prebuilt Type Annotations (v0.4.0) - Nominal types and refinements
+- Runtime Introspection Hooks (v0.4.0) - `inspect()` and `withMetadata()`
 
 ---
 
@@ -55,45 +57,63 @@ const result = rawUser
   validators and manual chaining patterns stay valid until the feature becomes
   available.
 
-### Runtime Introspection Hooks
+### Runtime Introspection Hooks ✅ **IMPLEMENTED (v0.4.0)**
 
+- **Status:** Fully implemented with `inspect()` and `withMetadata()` APIs
 - **Pillars:** Supports developers without mutating data path; pure core
-  preserved if hooks are side-effect free snapshots
-- **Compiler:** Gate ensures `inspect()` appears only in `*.schema.ts` or
-  designated debug modules; no transform change
-- **Bytecode:** Extend metadata table (not opcode) to annotate schema names and
-  source spans
-- **Compatibility:** Behind feature flag to keep bundle cost opt-in
+  preserved as hooks are side-effect snapshots
+- **Bytecode:** Added `Op.METADATA` opcode to wrap schemas with metadata
+- **Runtime:** Provides `inspect()` wrapper with `onSuccess` and `onFailure` hooks
+- **Compatibility:** Opt-in via wrapper pattern; no bundle cost unless used
 
-#### Before / After
+#### Implementation
 
-**Before**
+The runtime now provides introspection capabilities through two APIs:
 
-```ts
-const validateOrder = (payload: unknown): Result<Order> => {
-  const snapshot = JSON.parse(JSON.stringify(payload)); // manual deep copy for debugging
-  const result = orderSchema(payload);
-  if (result.isErr()) {
-    debugBus.emit("order:invalid", { snapshot, issues: result.error.issues }); // no schema metadata
-  }
-  return result;
-};
-```
+1. **`withMetadata(schema, metadata)`** - Attaches metadata to a schema
+2. **`inspect(schema, configure)`** - Wraps schema with observability hooks
 
-**After**
+**Example Usage:**
 
 ```ts
-const validateOrder = orderSchema.inspect((ctx) => {
-  ctx.onFailure((issues) => {
+import { inspect, withMetadata } from "lfts-runtime";
+
+// Attach metadata to schema
+const OrderSchema = withMetadata(orderBytecode, {
+  name: "Order",
+  source: "src/types/order.schema.ts",
+});
+
+// Create inspectable wrapper with hooks
+const InspectedOrderSchema = inspect<Order>(OrderSchema, (ctx) => {
+  ctx.onFailure((error) => {
     debugBus.emit("order:invalid", {
-      schema: ctx.schemaName, // metadata provided by runtime
-      issues,
+      schema: ctx.schemaName, // "Order"
+      source: ctx.schemaSource, // "src/types/order.schema.ts"
+      error,
     });
   });
-}); // inspector returns same Result<Order> signature
 
-validateOrder(payload); // hook fires only on failure
+  ctx.onSuccess((value) => {
+    metrics.recordValidation(ctx.schemaName, "success");
+  });
+});
+
+// Use the inspectable schema
+const result = InspectedOrderSchema.validate(payload);
+// Hooks fire automatically based on validation outcome
 ```
+
+**Features:**
+- Zero runtime cost when not used (opt-in wrapper pattern)
+- Multiple hooks can be registered per event
+- Hook errors are caught and logged to prevent breaking validation
+- Works with all validation methods: `validate()`, `validateUnsafe()`, `validateAll()`
+- Metadata transparently passes through validation
+
+**Testing:**
+- Full test suite in `packages/lfts-type-runtime/introspection.test.ts`
+- Example usage in `packages/lfts-type-runtime/introspection-example.ts`
 
 ---
 

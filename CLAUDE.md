@@ -80,9 +80,9 @@ All essential LFTS enforcement rules are functional:
 - typeOf usage restrictions
 - No assertions in schema files
 
-## Runtime Performance (v0.3.0)
+## Runtime Performance and Features (v0.4.0)
 
-The LFTS runtime validator has been optimized for high-performance validation:
+The LFTS runtime validator has been optimized for high-performance validation and includes developer-friendly introspection capabilities:
 
 ### Optimizations Implemented
 
@@ -113,6 +113,13 @@ The LFTS runtime validator has been optimized for high-performance validation:
    - Composable: `string & MinLength<3> & MaxLength<20> & Email`
    - Replaces verbose `{ readonly __brand: "UserId" }` pattern
    - Addresses VALIDATOR_GAPS.md "No refinements" limitation
+
+6. **Runtime Introspection Hooks** (v0.4.0): **Observability without mutation**
+   - `inspect(schema, configure)` - Wrap schemas with success/failure hooks
+   - `withMetadata(schema, metadata)` - Attach schema name and source location
+   - Zero cost when not used (opt-in wrapper pattern)
+   - Multiple hooks per event, errors caught to prevent breaking validation
+   - Example: `inspect(UserSchema, ctx => ctx.onFailure(err => log(err)))`
 
 ### Performance Characteristics
 

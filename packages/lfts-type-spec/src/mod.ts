@@ -36,6 +36,8 @@ export enum Op {
   RESULT_ERR,
   OPTION_SOME,
   OPTION_NONE,
+  // introspection metadata (Phase 1.2)
+  METADATA,
 }
 
 export type Bytecode = any[]; // nested tuples/arrays
@@ -110,4 +112,10 @@ export const enc = {
     some: (valueType: Bytecode): Bytecode => [Op.OPTION_SOME, valueType],
     none: (): Bytecode => [Op.OPTION_NONE],
   },
+
+  // introspection metadata (Phase 1.2)
+  metadata: (
+    schema: Bytecode,
+    meta: { name?: string; source?: string },
+  ): Bytecode => [Op.METADATA, meta, schema],
 };
