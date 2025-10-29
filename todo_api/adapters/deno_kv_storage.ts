@@ -1,4 +1,4 @@
-import type { Result } from "../../packages/lfp-type-runtime/mod.ts";
+import type { Result } from "../../packages/lfts-type-runtime/mod.ts";
 import type { Task, TaskId, TaskList } from "../domain/types.ts";
 import type { StorageError, StoragePort } from "../ports/storage.ts";
 
@@ -15,7 +15,9 @@ export type DenoKvStorageDependencies = Readonly<{
   readonly kv: Deno.Kv;
 }>;
 
-export function createDenoKvStoragePort(deps: DenoKvStorageDependencies): StoragePort {
+export function createDenoKvStoragePort(
+  deps: DenoKvStorageDependencies,
+): StoragePort {
   const kv = deps.kv;
 
   return {

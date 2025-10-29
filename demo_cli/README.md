@@ -1,4 +1,4 @@
-# LFP Demo CLI
+# LFTS Demo CLI
 
 A small CLI app that demonstrates the Light-FP TypeScript subset:
 
@@ -28,11 +28,10 @@ You can also pipe JSON commands:
 echo '{ "type": "add", "name": "Demo task" }' | deno task demo
 ```
 
-
-
 ## Persistence via StoragePort
 
 We added a `StoragePort` and a file-based adapter:
+
 - On startup, the app loads `./tasks.json` if present.
 - On `add` and `complete`, it saves the `TaskList` in canonical JSON.
 

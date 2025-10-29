@@ -1,13 +1,18 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with
+code in this repository.
 
 ## Project Overview
 
-This is a **Light-FP TypeScript compiler** prototype that enforces a minimal functional programming subset and compiles `typeOf<T>()` calls into Deepkit-compatible bytecode literals. The compiler performs three passes:
+This is a **Light-FP TypeScript compiler** prototype that enforces a minimal
+functional programming subset and compiles `typeOf<T>()` calls into
+Deepkit-compatible bytecode literals. The compiler performs three passes:
 
-1. **Gate pass** - Rejects disallowed syntax (OOP constructs, decorators, mapped/conditional types)
-2. **Policy pass** - Enforces semantic rules (ports discipline, data-only schemas, canonical forms)
+1. **Gate pass** - Rejects disallowed syntax (OOP constructs, decorators,
+   mapped/conditional types)
+2. **Policy pass** - Enforces semantic rules (ports discipline, data-only
+   schemas, canonical forms)
 3. **Transform pass** - Rewrites `typeOf<T>()` → bytecode literals
 
 ## Development Commands
@@ -33,32 +38,39 @@ deno task test:app:all
 deno task release
 
 # Run performance benchmarks
-deno run -A packages/lfp-type-runtime/benchmark.ts
-deno run -A packages/lfp-type-runtime/benchmark-union.ts
+deno run -A packages/lfts-type-runtime/benchmark.ts
+deno run -A packages/lfts-type-runtime/benchmark-union.ts
 ```
 
 ## Test Suite Status
 
 **Current**: 15/18 tests passing (83% pass rate)
 
-The compiler test suite has 18 golden tests in [packages/lfp-type-compiler/src/testing/fixtures/](packages/lfp-type-compiler/src/testing/fixtures/). As of the latest refactoring work:
+The compiler test suite has 18 golden tests in
+[packages/lfts-type-compiler/src/testing/fixtures/](packages/lfts-type-compiler/src/testing/fixtures/).
+As of the latest refactoring work:
 
-- ✅ **15 tests passing** - All core LFP rules are working correctly
-- ❌ **3 tests failing** - Known limitations documented in [KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md)
+- ✅ **15 tests passing** - All core LFTS rules are working correctly
+- ❌ **3 tests failing** - Known limitations documented in
+  [KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md)
 
 ### Known Failing Tests (Expected Failures)
 
 These 3 test failures are documented limitations, not regressions:
 
-1. **fail_extra_match_case** (LFP1007) - Exhaustive match checking doesn't work due to TypeScript Compiler API limitations
+1. **fail_extra_match_case** (LFP1007) - Exhaustive match checking doesn't work
+   due to TypeScript Compiler API limitations
 2. **fail_non_exhaustive_match** (LFP1007) - Same root cause as above
-3. **fail_type_only_import** (LFP1013) - Type-only import detection needs AST navigation improvements
+3. **fail_type_only_import** (LFP1013) - Type-only import detection needs AST
+   navigation improvements
 
-See [KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) for detailed technical analysis and potential fixes for future contributors.
+See [KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) for detailed technical analysis and
+potential fixes for future contributors.
 
 ### What Works
 
-All essential LFP enforcement rules are functional:
+All essential LFTS enforcement rules are functional:
+
 - Port interface validation and discipline
 - ADT discriminated union validation
 - Data schema purity (no functions, no null)
@@ -70,14 +82,15 @@ All essential LFP enforcement rules are functional:
 
 ## Runtime Performance (v0.3.0)
 
-The LFP runtime validator has been optimized for high-performance validation:
+The LFTS runtime validator has been optimized for high-performance validation:
 
 ### Optimizations Implemented
 
 1. **DUNION Tag Caching** (v0.2.0): **40x-1,600x speedup** for ADT validation
    - WeakMap-based O(1) tag lookup
    - Automatic for all discriminated unions
-   - Example: 20-variant ADT validates at 15.9M ops/sec vs 10K ops/sec with UNION
+   - Example: 20-variant ADT validates at 15.9M ops/sec vs 10K ops/sec with
+     UNION
 
 2. **Lazy Path Construction** (v0.2.0): **5-15% overall speedup**
    - Build error paths only when validation fails
@@ -100,53 +113,72 @@ The LFP runtime validator has been optimized for high-performance validation:
 - **Deep validation**: Optimized path construction
 - **Batch validation**: Suitable for high-throughput APIs
 
-See [docs/BYTECODE_REFERENCE.md](docs/BYTECODE_REFERENCE.md) for detailed performance analysis and [packages/lfp-type-runtime/benchmark.ts](packages/lfp-type-runtime/benchmark.ts) for benchmarks.
+See [docs/BYTECODE_REFERENCE.md](docs/BYTECODE_REFERENCE.md) for detailed
+performance analysis and
+[packages/lfts-type-runtime/benchmark.ts](packages/lfts-type-runtime/benchmark.ts)
+for benchmarks.
 
 ## Architecture
 
 ### Package Structure
 
-- **`packages/lfp-type-spec/`** - Bytecode opcodes (`Op` enum) and encoding helpers
-- **`packages/lfp-type-compiler/`** - Main compiler with three passes:
+- **`packages/lfts-type-spec/`** - Bytecode opcodes (`Op` enum) and encoding
+  helpers
+- **`packages/lfts-type-compiler/`** - Main compiler with three passes:
   - `gate/` - Syntax gating (bans OOP, decorators, advanced TS features)
   - `policy/` - Semantic rules enforcement via pluggable rules
   - `transform/` - AST transformers for `typeOf<T>()` and schema-root rewriting
-- **`packages/lfp-type-runtime/`** - Runtime validator using bytecode (thin wrapper around @deepkit/type concepts)
+- **`packages/lfts-type-runtime/`** - Runtime validator using bytecode (thin
+  wrapper around @deepkit/type concepts)
 - **`deno_example/`** - Minimal working example
-- **`demo_cli/`** - Full CLI app demonstrating all LFP patterns
+- **`demo_cli/`** - Full CLI app demonstrating all LFTS patterns
 
 ### Compiler Pipeline
 
-The compiler entry point is [packages/lfp-type-compiler/src/compiler.ts](packages/lfp-type-compiler/src/compiler.ts):
+The compiler entry point is
+[packages/lfts-type-compiler/src/compiler.ts](packages/lfts-type-compiler/src/compiler.ts):
 
-1. **Gate** ([gate/gate.ts](packages/lfp-type-compiler/src/gate/gate.ts)) - Walks AST to ban:
-   - OOP: `class`, `extends`, `implements`, `constructor`, `new`, `super`, `this`
+1. **Gate** ([gate/gate.ts](packages/lfts-type-compiler/src/gate/gate.ts)) -
+   Walks AST to ban:
+   - OOP: `class`, `extends`, `implements`, `constructor`, `new`, `super`,
+     `this`
    - Decorators (legacy or TC39)
-   - Advanced types: mapped, conditional, template-literal, `keyof`, indexed access, recursive types
+   - Advanced types: mapped, conditional, template-literal, `keyof`, indexed
+     access, recursive types
 
-2. **Policy** ([policy/engine.ts](packages/lfp-type-compiler/src/policy/engine.ts)) - Runs pluggable rules in `policy/rules/`:
+2. **Policy**
+   ([policy/engine.ts](packages/lfts-type-compiler/src/policy/engine.ts)) - Runs
+   pluggable rules in `policy/rules/`:
    - Port discipline (LFP1001, LFP1002, LFP1012)
    - Data purity (LFP1003)
    - ADT correctness (LFP1006, LFP1007)
    - Canonical syntax enforcement (LFP1008-LFP1016)
 
-3. **Transform** ([transform/typeOf-rewriter.ts](packages/lfp-type-compiler/src/transform/typeOf-rewriter.ts)) - Replaces `typeOf<T>()` with bytecode literals
+3. **Transform**
+   ([transform/typeOf-rewriter.ts](packages/lfts-type-compiler/src/transform/typeOf-rewriter.ts)) -
+   Replaces `typeOf<T>()` with bytecode literals
 
 ### Policy Rules System
 
-Rules live in `packages/lfp-type-compiler/src/policy/rules/`. Each rule exports a `Rule` object with:
-- `meta` - Rule ID (LFP####), name, severity, description
+Rules live in `packages/lfts-type-compiler/src/policy/rules/`. Each rule exports
+a `Rule` object with:
+
+- `meta` - Rule ID (LFTS####), name, severity, description
 - `analyzeDeclaration?` - Called on declarations (interfaces, types)
 - `analyzeUsage?` - Called on all nodes
 
 To add a new rule:
+
 1. Create file in `policy/rules/my-rule.ts`
 2. Export rule object implementing `Rule` interface
-3. Import and push to `rules` array in [policy/context.ts](packages/lfp-type-compiler/src/policy/context.ts)
+3. Import and push to `rules` array in
+   [policy/context.ts](packages/lfts-type-compiler/src/policy/context.ts)
 
 ### Bytecode Format
 
-Bytecode is represented as nested arrays. See [packages/lfp-type-spec/src/mod.ts](packages/lfp-type-spec/src/mod.ts) for opcodes and encoding helpers:
+Bytecode is represented as nested arrays. See
+[packages/lfts-type-spec/src/mod.ts](packages/lfts-type-spec/src/mod.ts) for
+opcodes and encoding helpers:
 
 - Primitives: `[Op.STRING]`, `[Op.NUMBER]`, etc.
 - Literals: `[Op.LITERAL, value]`
@@ -154,13 +186,17 @@ Bytecode is represented as nested arrays. See [packages/lfp-type-spec/src/mod.ts
 - Tuples: `[Op.TUPLE, length, ...elementTypes]`
 - Objects: `[Op.OBJECT, propCount, Op.PROPERTY, name, isOptional, type, ...]`
 - Unions: `[Op.UNION, altCount, ...alternatives]`
-- Discriminated unions: `[Op.DUNION, tagKey, variantCount, tag1, schema1, tag2, schema2, ...]`
+- Discriminated unions:
+  `[Op.DUNION, tagKey, variantCount, tag1, schema1, tag2, schema2, ...]`
 - Readonly: `[Op.READONLY, innerType]`
 - Brand: `[Op.BRAND, tag, innerType]`
 
 ### Runtime Validation
 
-The runtime ([packages/lfp-type-runtime/mod.ts](packages/lfp-type-runtime/mod.ts)) provides:
+The runtime
+([packages/lfts-type-runtime/mod.ts](packages/lfts-type-runtime/mod.ts))
+provides:
+
 - `typeOf<T>()` - Dev shim (replaced by compiler with bytecode)
 - `validate(schema, value)` - Validates value against bytecode schema
 - `serialize(schema, value)` - Currently just validates + identity
@@ -194,7 +230,7 @@ Two patterns for defining schemas:
 
 1. **Explicit** (pre-v0.2.0):
    ```ts
-   import { typeOf } from "../packages/lfp-type-runtime/mod.ts";
+   import { typeOf } from "../packages/lfts-type-runtime/mod.ts";
    import type { User } from "./types.ts";
    export const User$ = typeOf<User>();
    ```
@@ -208,12 +244,14 @@ Two patterns for defining schemas:
 ### Ports/Capabilities Pattern
 
 Ports define dependency interfaces and must:
+
 - Be TypeScript interfaces (not types)
-- Have suffix `Port` or `Capability` (configurable in `lfp.config.json`)
+- Have suffix `Port` or `Capability` (configurable in `lfts.config.json`)
 - Contain only method signatures (LFP1012)
 - Not appear in data schemas (LFP1002)
 
 Example:
+
 ```ts
 // ports/storage.ts
 export interface StoragePort {
@@ -226,13 +264,15 @@ export interface StoragePort {
 
 ### Golden Tests
 
-Compiler tests use a golden test pattern in [packages/lfp-type-compiler/src/testing/golden.ts](packages/lfp-type-compiler/src/testing/golden.ts):
+Compiler tests use a golden test pattern in
+[packages/lfts-type-compiler/src/testing/golden.ts](packages/lfts-type-compiler/src/testing/golden.ts):
 
-- Test fixtures in `packages/lfp-type-compiler/src/testing/fixtures/`
+- Test fixtures in `packages/lfts-type-compiler/src/testing/fixtures/`
 - Each fixture has `src/` directory and `test.json` with expected diagnostics
 - Naming: `ok_*` (should pass) or `fail_*` (should produce specific errors)
 
 To add a test:
+
 1. Create `fixtures/fail_my_test/src/a.ts` with test code
 2. Create `fixtures/fail_my_test/test.json`:
    ```json
@@ -246,7 +286,9 @@ To add a test:
 
 ### Known Limitations
 
-See [VALIDATOR_GAPS.md](docs/VALIDATOR_GAPS.md) for runtime validator limitations:
+See [VALIDATOR_GAPS.md](docs/VALIDATOR_GAPS.md) for runtime validator
+limitations:
+
 - No recursive/self-referential types
 - No generics, mapped/conditional types
 - No refinements (min/max, regex, etc.)
@@ -255,7 +297,7 @@ See [VALIDATOR_GAPS.md](docs/VALIDATOR_GAPS.md) for runtime validator limitation
 
 ## Configuration
 
-`lfp.config.json` configures policy rules:
+`lfts.config.json` configures policy rules:
 
 ```json
 {
@@ -276,7 +318,7 @@ See [VALIDATOR_GAPS.md](docs/VALIDATOR_GAPS.md) for runtime validator limitation
 
 ### Adding a New Policy Rule
 
-1. Create `packages/lfp-type-compiler/src/policy/rules/my-rule.ts`:
+1. Create `packages/lfts-type-compiler/src/policy/rules/my-rule.ts`:
    ```ts
    import { Rule, RuleContext } from "../context.ts";
 
@@ -286,15 +328,16 @@ See [VALIDATOR_GAPS.md](docs/VALIDATOR_GAPS.md) for runtime validator limitation
        name: "my-rule-name",
        defaultSeverity: "error",
        defaultOptions: {},
-       description: "Rule description"
+       description: "Rule description",
      },
      analyzeUsage(node, ctx) {
        // Check node and call ctx.report() on violations
-     }
+     },
    };
    ```
 
-2. Import and register in [packages/lfp-type-compiler/src/policy/context.ts](packages/lfp-type-compiler/src/policy/context.ts):
+2. Import and register in
+   [packages/lfts-type-compiler/src/policy/context.ts](packages/lfts-type-compiler/src/policy/context.ts):
    ```ts
    import { myRule } from "./rules/my-rule.ts";
    rules.push(..., myRule);
@@ -304,15 +347,21 @@ See [VALIDATOR_GAPS.md](docs/VALIDATOR_GAPS.md) for runtime validator limitation
 
 ### Adding a New Bytecode Operation
 
-1. Add opcode to `Op` enum in [packages/lfp-type-spec/src/mod.ts](packages/lfp-type-spec/src/mod.ts)
+1. Add opcode to `Op` enum in
+   [packages/lfts-type-spec/src/mod.ts](packages/lfts-type-spec/src/mod.ts)
 2. Add encoder helper to `enc` object
-3. Add validator case in [packages/lfp-type-runtime/mod.ts](packages/lfp-type-runtime/mod.ts) `validateWith()` function
-4. Add transformer logic in [packages/lfp-type-compiler/src/transform/typeOf-rewriter.ts](packages/lfp-type-compiler/src/transform/typeOf-rewriter.ts)
+3. Add validator case in
+   [packages/lfts-type-runtime/mod.ts](packages/lfts-type-runtime/mod.ts)
+   `validateWith()` function
+4. Add transformer logic in
+   [packages/lfts-type-compiler/src/transform/typeOf-rewriter.ts](packages/lfts-type-compiler/src/transform/typeOf-rewriter.ts)
 
 ## Language Specification
 
 Full spec in [LANG-SPEC.md](docs/LANG-SPEC.md). Key points:
 
-- **Allowed**: primitives, arrays, tuples, objects, unions, readonly, intersections (for branding only)
-- **Disallowed**: classes, decorators, `this`, mapped/conditional types, generics (in schemas)
+- **Allowed**: primitives, arrays, tuples, objects, unions, readonly,
+  intersections (for branding only)
+- **Disallowed**: classes, decorators, `this`, mapped/conditional types,
+  generics (in schemas)
 - All policies enforced at compile time, not via linter

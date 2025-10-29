@@ -4,11 +4,13 @@ Thank you for your interest in contributing to the Light-FP compiler project!
 
 ## 🚫 **CRITICAL: No OOP Constructs Allowed**
 
-This codebase strictly follows **Light-FP principles** and **does not allow any OOP constructs**.
+This codebase strictly follows **Light-FP principles** and **does not allow any
+OOP constructs**.
 
 ### Banned Constructs
 
-The following are **strictly prohibited** in all source code (except test fixtures):
+The following are **strictly prohibited** in all source code (except test
+fixtures):
 
 - ❌ `class` declarations
 - ❌ `extends` keyword (inheritance)
@@ -21,6 +23,7 @@ The following are **strictly prohibited** in all source code (except test fixtur
 ### Why?
 
 Light-FP enforces functional programming discipline:
+
 - **Pure functions** over stateful objects
 - **Data transformations** over mutation
 - **Type aliases** over classes
@@ -46,8 +49,8 @@ Multiple layers prevent OOP introduction:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-org/lfp-compiler.git
-   cd lfp-compiler
+   git clone https://github.com/your-org/lfts-compiler.git
+   cd lfts-compiler
    ```
 
 2. Install git hooks:
@@ -132,7 +135,7 @@ export function createFileStorage(basePath: string): StoragePort {
     async save(user: User): Promise<void> {
       await Deno.writeTextFile(
         `${basePath}/${user.id}.json`,
-        JSON.stringify(user)
+        JSON.stringify(user),
       );
     },
     async load(id: string): Promise<User | undefined> {
@@ -192,11 +195,11 @@ class FileStorage implements StoragePort {
 ## Project Structure
 
 ```
-lfp-compiler/
+lfts-compiler/
 ├── packages/
-│   ├── lfp-type-spec/        # Bytecode opcodes
-│   ├── lfp-type-compiler/    # Compiler (gate, policy, transform)
-│   └── lfp-type-runtime/     # Runtime validator
+│   ├── lfts-type-spec/        # Bytecode opcodes
+│   ├── lfts-type-compiler/    # Compiler (gate, policy, transform)
+│   └── lfts-type-runtime/     # Runtime validator
 ├── deno_example/             # Minimal example
 ├── demo_cli/                 # Full-featured CLI demo
 ├── scripts/                  # Build and validation scripts
@@ -214,7 +217,8 @@ See [CLAUDE.md](CLAUDE.md#adding-a-new-policy-rule) for detailed instructions.
 
 ### Adding a Bytecode Operation
 
-See [CLAUDE.md](CLAUDE.md#adding-a-new-bytecode-operation) for detailed instructions.
+See [CLAUDE.md](CLAUDE.md#adding-a-new-bytecode-operation) for detailed
+instructions.
 
 ## Testing
 
@@ -226,7 +230,8 @@ Compiler tests use golden test pattern:
 deno task test
 ```
 
-Test fixtures in `packages/lfp-type-compiler/src/testing/fixtures/`:
+Test fixtures in `packages/lfts-type-compiler/src/testing/fixtures/`:
+
 - `ok_*` - Should compile successfully
 - `fail_*` - Should produce specific errors
 

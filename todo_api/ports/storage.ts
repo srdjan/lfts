@@ -1,4 +1,4 @@
-import type { Result } from "../../packages/lfp-type-runtime/mod.ts";
+import type { Result } from "../../packages/lfts-type-runtime/mod.ts";
 import type { Task, TaskId, TaskList } from "../domain/types.ts";
 
 export type StorageError =

@@ -1,6 +1,9 @@
-
 // packages/release/src/release.ts
-import { dirname, fromFileUrl, join } from "https://deno.land/std@0.224.0/path/mod.ts";
+import {
+  dirname,
+  fromFileUrl,
+  join,
+} from "https://deno.land/std@0.224.0/path/mod.ts";
 import { ZipFile } from "https://deno.land/x/zipjs@v2.7.38/index.js";
 
 const projectRoot = dirname(dirname(dirname(fromFileUrl(import.meta.url)))); // .../packages/release
@@ -9,7 +12,7 @@ await Deno.mkdir(outDir, { recursive: true });
 
 // Read version
 const version = (await Deno.readTextFile(join(projectRoot, "VERSION"))).trim();
-const zipPath = join(outDir, `lfp-compiler-${version}.zip`);
+const zipPath = join(outDir, `lfts-compiler-${version}.zip`);
 
 const include = [
   "README.md",
@@ -17,7 +20,7 @@ const include = [
   "guide.mmd",
   "CHANGELOG.md",
   "VERSION",
-  "lfp.config.json",
+  "lfts.config.json",
   "deno.json",
   "packages/",
   "demo_cli/",
@@ -41,7 +44,9 @@ for (const p of include) {
           const bytes = await Deno.readFile(cur);
           zip.addBlob(rel, new Blob([bytes]));
         } else if (s.isDirectory) {
-          for await (const e of Deno.readDir(cur)) stack.push(join(cur, e.name));
+          for await (const e of Deno.readDir(cur)) {
+            stack.push(join(cur, e.name));
+          }
         }
       }
     }

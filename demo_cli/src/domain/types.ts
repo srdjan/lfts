@@ -1,4 +1,4 @@
-import { typeOf } from "../../../packages/lfp-type-runtime/mod.ts";
+import { typeOf } from "../../../packages/lfts-type-runtime/mod.ts";
 
 /** Structural brand */
 export type TaskId = string & { readonly __brand: "TaskId" };

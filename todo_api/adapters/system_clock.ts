@@ -1,4 +1,4 @@
-import type { Result } from "../../packages/lfp-type-runtime/mod.ts";
+import type { Result } from "../../packages/lfts-type-runtime/mod.ts";
 import type { ClockError, ClockPort } from "../ports/clock.ts";
 import type { UnixTime } from "../domain/types.ts";
 

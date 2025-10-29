@@ -1,10 +1,13 @@
 # OOP Safeguards
 
-This document describes the multiple layers of protection against introducing OOP constructs into the Light-FP codebase.
+This document describes the multiple layers of protection against introducing
+OOP constructs into the Light-FP codebase.
 
 ## Overview
 
-The Light-FP compiler project strictly enforces functional programming principles and **prohibits all OOP constructs**. To prevent accidental introduction of OOP patterns, we have implemented multiple automated safeguards.
+The Light-FP compiler project strictly enforces functional programming
+principles and **prohibits all OOP constructs**. To prevent accidental
+introduction of OOP patterns, we have implemented multiple automated safeguards.
 
 ## Prohibited Constructs
 
@@ -24,25 +27,32 @@ The following are banned in all source code (except test fixtures):
 
 **File:** [scripts/check-no-oop.ts](../scripts/check-no-oop.ts)
 
-A TypeScript script that scans the codebase for OOP patterns using regex detection.
+A TypeScript script that scans the codebase for OOP patterns using regex
+detection.
 
 **Features:**
+
 - Scans all TypeScript files in key directories
 - Detects all OOP keywords and patterns
-- Smart filtering to avoid false positives (e.g., generic constraints like `T extends readonly`)
-- Context-aware checks (allows keywords in string literals and compiler metadata)
+- Smart filtering to avoid false positives (e.g., generic constraints like
+  `T extends readonly`)
+- Context-aware checks (allows keywords in string literals and compiler
+  metadata)
 - Detailed error reporting with file paths, line numbers, and descriptions
 
 **Usage:**
+
 ```bash
 deno run -A scripts/check-no-oop.ts
 ```
 
 **Exit codes:**
+
 - `0` - No violations found
 - `1` - OOP constructs detected
 
 **Directories checked:**
+
 - `packages/`
 - `deno_example/src/`
 - `demo_cli/src/`
@@ -50,7 +60,8 @@ deno run -A scripts/check-no-oop.ts
 - `scripts/`
 
 **Excluded:**
-- `packages/lfp-type-compiler/src/testing/fixtures/` - Test cases
+
+- `packages/lfts-type-compiler/src/testing/fixtures/` - Test cases
 - `*.test.ts` - Test files
 - `dist/` - Build output
 - `node_modules/` - Dependencies
@@ -67,6 +78,7 @@ deno task lint:fix    # Auto-fix lint issues (not OOP violations)
 ```
 
 **Configuration:**
+
 ```json
 {
   "tasks": {
@@ -74,7 +86,7 @@ deno task lint:fix    # Auto-fix lint issues (not OOP violations)
   },
   "lint": {
     "exclude": [
-      "packages/lfp-type-compiler/src/testing/fixtures/",
+      "packages/lfts-type-compiler/src/testing/fixtures/",
       "dist/",
       "node_modules/"
     ]
@@ -85,21 +97,25 @@ deno task lint:fix    # Auto-fix lint issues (not OOP violations)
 ### 3. Git Pre-commit Hook
 
 **Files:**
+
 - [scripts/pre-commit](../scripts/pre-commit) - The hook script
 - [scripts/install-hooks.sh](../scripts/install-hooks.sh) - Installation script
 
 **Installation:**
+
 ```bash
 ./scripts/install-hooks.sh
 ```
 
 **What it does:**
+
 - Runs automatically before every `git commit`
 - Executes the OOP checker on all staged files
 - Blocks the commit if violations are found
 - Can be bypassed with `git commit --no-verify` (not recommended)
 
 **Benefits:**
+
 - Catches OOP violations before they enter the repository
 - Immediate feedback to developers
 - Zero manual intervention required
@@ -111,6 +127,7 @@ deno task lint:fix    # Auto-fix lint issues (not OOP violations)
 **Jobs:**
 
 #### a) Lint & OOP Safeguards
+
 ```yaml
 - name: Run Deno Lint
   run: deno lint
@@ -120,6 +137,7 @@ deno task lint:fix    # Auto-fix lint issues (not OOP violations)
 ```
 
 #### b) Light-FP Compliance Check
+
 ```yaml
 - name: Verify no OOP constructs in packages
   run: grep -r '\bclass\s' packages/ --exclude-dir=fixtures || exit 0
@@ -132,10 +150,12 @@ deno task lint:fix    # Auto-fix lint issues (not OOP violations)
 ```
 
 **Triggers:**
+
 - All pushes to `main`
 - All pull requests targeting `main`
 
 **Benefits:**
+
 - Prevents merging PRs with OOP violations
 - Multiple redundant checks for safety
 - Public CI status visible on PRs
@@ -143,6 +163,7 @@ deno task lint:fix    # Auto-fix lint issues (not OOP violations)
 ### 5. Documentation
 
 **Files:**
+
 - [README.md](../README.md) - Quick reference and safeguard overview
 - [CONTRIBUTING.md](../CONTRIBUTING.md) - Detailed contributor guidelines
 - [CLAUDE.md](../CLAUDE.md) - Instructions for Claude Code
@@ -227,18 +248,21 @@ Please refactor to use functional patterns instead.
 
 ### Automated Testing
 
-The safeguards are tested in CI on every push and PR. See [.github/workflows/ci.yml](../.github/workflows/ci.yml).
+The safeguards are tested in CI on every push and PR. See
+[.github/workflows/ci.yml](../.github/workflows/ci.yml).
 
 ## Bypassing Safeguards (Not Recommended)
 
 In rare cases (e.g., adding test fixtures), you may need to bypass checks:
 
 ### Git Commit Hook
+
 ```bash
 git commit --no-verify -m "Add test fixture with intentional OOP"
 ```
 
 ### CI Checks
+
 Cannot be bypassed - must be resolved to merge.
 
 ## Maintenance
@@ -262,7 +286,8 @@ To detect new OOP patterns:
 
 ### Updating Excluded Directories
 
-Edit `EXCLUDE_PATTERNS` in [scripts/check-no-oop.ts](../scripts/check-no-oop.ts):
+Edit `EXCLUDE_PATTERNS` in
+[scripts/check-no-oop.ts](../scripts/check-no-oop.ts):
 
 ```typescript
 const EXCLUDE_PATTERNS = [
@@ -274,7 +299,8 @@ const EXCLUDE_PATTERNS = [
 
 ### Updating Checked Directories
 
-Edit `DIRECTORIES_TO_CHECK` in [scripts/check-no-oop.ts](../scripts/check-no-oop.ts):
+Edit `DIRECTORIES_TO_CHECK` in
+[scripts/check-no-oop.ts](../scripts/check-no-oop.ts):
 
 ```typescript
 const DIRECTORIES_TO_CHECK = [
@@ -286,16 +312,18 @@ const DIRECTORIES_TO_CHECK = [
 ## Developer Workflow
 
 ### Initial Setup
+
 ```bash
 # Clone repository
 git clone <repo-url>
-cd lfp-compiler
+cd lfts-compiler
 
 # Install git hooks
 ./scripts/install-hooks.sh
 ```
 
 ### Before Every Commit
+
 ```bash
 # Run lint to catch issues early
 deno task lint
@@ -305,6 +333,7 @@ deno task lint
 ```
 
 ### When Creating PRs
+
 - CI automatically runs all checks
 - PRs cannot be merged with violations
 - Fix violations in your branch before requesting review

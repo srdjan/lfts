@@ -4,11 +4,17 @@
   },
   "lint": {
     "rules": {
-      "exclude": ["no-explicit-any", "no-unused-vars", "no-unversioned-import", "ban-ts-comment", "no-deprecated-deno-api"],
+      "exclude": [
+        "no-explicit-any",
+        "no-unused-vars",
+        "no-unversioned-import",
+        "ban-ts-comment",
+        "no-deprecated-deno-api"
+      ],
       "tags": ["recommended"]
     },
     "exclude": [
-      "packages/lfp-type-compiler/src/testing/fixtures/",
+      "packages/lfts-type-compiler/src/testing/fixtures/",
       "dist/",
       "node_modules/"
     ]
@@ -16,14 +22,14 @@
   "tasks": {
     "lint": "deno lint && deno run -A scripts/check-no-oop.ts",
     "lint:fix": "deno lint --fix",
-    "build": "deno run -A packages/lfp-type-compiler/src/cli.ts deno_example/src --outDir dist",
+    "build": "deno run -A packages/lfts-type-compiler/src/cli.ts deno_example/src --outDir dist",
     "start": "deno run -A dist/main.js",
-    "test": "deno test -A packages/lfp-type-compiler/src/testing/golden.ts",
+    "test": "deno test -A packages/lfts-type-compiler/src/testing/golden.ts",
     "demo": "deno run -A demo_cli/src/app.ts",
     "test:app": "deno test -A demo_cli/tests/e2e.test.ts",
     "test:app:all": "deno test -A demo_cli/tests/e2e.test.ts demo_cli/tests/e2e_negative.test.ts",
     "release": "deno run -A packages/release/src/release.ts",
-    "todo:build": "deno run -A packages/lfp-type-compiler/src/cli.ts todo_api/domain --outDir todo_api/dist",
+    "todo:build": "deno run -A packages/lfts-type-compiler/src/cli.ts todo_api/domain --outDir todo_api/dist",
     "todo:serve": "deno run -A todo_api/main.ts",
     "todo:dev": "deno task todo:build && deno run -A --watch=todo_api todo_api/main.ts",
     "todo:test": "deno test -A todo_api/tests/task.test.ts"
