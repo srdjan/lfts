@@ -11,6 +11,108 @@ export function typeOf<T>(): any {
 
 export type TypeObject = unknown;
 
+// ============================================================================
+// Prebuilt Type Annotations
+// ============================================================================
+
+/**
+ * Nominal type annotation for compile-time branding.
+ *
+ * Usage:
+ *   type UserId = string & Nominal;
+ *   type ProductId = number & Nominal;
+ *
+ * This provides type-level distinction without runtime overhead.
+ * The compiler recognizes this annotation but emits no runtime checks.
+ */
+export type Nominal = { readonly __meta?: ["nominal"] };
+
+/**
+ * Email validation annotation (runtime check).
+ *
+ * Usage:
+ *   type UserEmail = string & Email;
+ *
+ * Validates email format at runtime using a simple pattern.
+ */
+export type Email = { readonly __meta?: ["email"] };
+
+/**
+ * URL validation annotation (runtime check).
+ *
+ * Usage:
+ *   type ProfileUrl = string & Url;
+ *
+ * Validates URL format at runtime.
+ */
+export type Url = { readonly __meta?: ["url"] };
+
+/**
+ * Custom regex pattern validation annotation (runtime check).
+ *
+ * Usage:
+ *   type PhoneNumber = string & Pattern<"^\\+?[1-9]\\d{1,14}$">;
+ *
+ * Validates string against custom regex pattern at runtime.
+ */
+export type Pattern<P extends string> = { readonly __meta?: ["pattern", P] };
+
+/**
+ * Minimum string length validation annotation (runtime check).
+ *
+ * Usage:
+ *   type Username = string & MinLength<3>;
+ *
+ * Validates string has at least N characters.
+ */
+export type MinLength<N extends number> = { readonly __meta?: ["minLength", N] };
+
+/**
+ * Maximum string length validation annotation (runtime check).
+ *
+ * Usage:
+ *   type Username = string & MaxLength<20>;
+ *
+ * Validates string has at most N characters.
+ */
+export type MaxLength<N extends number> = { readonly __meta?: ["maxLength", N] };
+
+/**
+ * Minimum numeric value validation annotation (runtime check).
+ *
+ * Usage:
+ *   type Age = number & Min<0>;
+ *
+ * Validates number is >= N.
+ */
+export type Min<N extends number> = { readonly __meta?: ["min", N] };
+
+/**
+ * Maximum numeric value validation annotation (runtime check).
+ *
+ * Usage:
+ *   type Age = number & Max<120>;
+ *
+ * Validates number is <= N.
+ */
+export type Max<N extends number> = { readonly __meta?: ["max", N] };
+
+/**
+ * Numeric range validation annotation (runtime check).
+ *
+ * Usage:
+ *   type Percentage = number & Range<0, 100>;
+ *
+ * Validates number is >= Min and <= Max.
+ */
+export type Range<MinVal extends number, MaxVal extends number> = {
+  readonly __meta?: ["range", MinVal, MaxVal];
+};
+
+// ============================================================================
+// Result and Option Types
+// ============================================================================
+
 // Result type for functional error handling
 export type Result<T, E> =
   | { readonly ok: true; readonly value: T }
@@ -547,6 +649,80 @@ function validateWithResult(
         ? createVError(
           buildPath(pathSegments),
           `expected array length <= ${maxItems}, got ${value.length}`,
+        )
+        : null;
+    })
+    .with(Op.REFINE_EMAIL, () => {
+      const innerSchema = bc[1];
+      const err = validateWithResult(
+        innerSchema,
+        value,
+        pathSegments,
+        depth + 1,
+      );
+      if (err) return err;
+      if (typeof value !== "string") {
+        return createVError(
+          buildPath(pathSegments),
+          `email refinement requires string type`,
+        );
+      }
+      // Simple email regex (not RFC-compliant, but good enough for most cases)
+      const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      return !emailPattern.test(value)
+        ? createVError(
+          buildPath(pathSegments),
+          `expected valid email format`,
+        )
+        : null;
+    })
+    .with(Op.REFINE_URL, () => {
+      const innerSchema = bc[1];
+      const err = validateWithResult(
+        innerSchema,
+        value,
+        pathSegments,
+        depth + 1,
+      );
+      if (err) return err;
+      if (typeof value !== "string") {
+        return createVError(
+          buildPath(pathSegments),
+          `url refinement requires string type`,
+        );
+      }
+      // Simple URL validation
+      try {
+        new URL(value);
+        return null;
+      } catch {
+        return createVError(
+          buildPath(pathSegments),
+          `expected valid URL format`,
+        );
+      }
+    })
+    .with(Op.REFINE_PATTERN, () => {
+      const pattern = bc[1] as string;
+      const innerSchema = bc[2];
+      const err = validateWithResult(
+        innerSchema,
+        value,
+        pathSegments,
+        depth + 1,
+      );
+      if (err) return err;
+      if (typeof value !== "string") {
+        return createVError(
+          buildPath(pathSegments),
+          `pattern refinement requires string type`,
+        );
+      }
+      const regex = new RegExp(pattern);
+      return !regex.test(value)
+        ? createVError(
+          buildPath(pathSegments),
+          `expected to match pattern ${pattern}`,
         )
         : null;
     })
@@ -1151,6 +1327,68 @@ function collectErrors(
           path: buildPath(pathSegments),
           message: `expected array length <= ${maxItems}, got ${value.length}`,
         });
+      }
+    })
+    .with(Op.REFINE_EMAIL, () => {
+      const innerSchema = bc[1];
+      collectErrors(
+        innerSchema,
+        value,
+        pathSegments,
+        depth + 1,
+        errors,
+        maxErrors,
+      );
+      if (errors.length < maxErrors && typeof value === "string") {
+        const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailPattern.test(value)) {
+          errors.push({
+            path: buildPath(pathSegments),
+            message: `expected valid email format`,
+          });
+        }
+      }
+    })
+    .with(Op.REFINE_URL, () => {
+      const innerSchema = bc[1];
+      collectErrors(
+        innerSchema,
+        value,
+        pathSegments,
+        depth + 1,
+        errors,
+        maxErrors,
+      );
+      if (errors.length < maxErrors && typeof value === "string") {
+        try {
+          new URL(value);
+        } catch {
+          errors.push({
+            path: buildPath(pathSegments),
+            message: `expected valid URL format`,
+          });
+        }
+      }
+    })
+    .with(Op.REFINE_PATTERN, () => {
+      const pattern = bc[1] as string;
+      const innerSchema = bc[2];
+      collectErrors(
+        innerSchema,
+        value,
+        pathSegments,
+        depth + 1,
+        errors,
+        maxErrors,
+      );
+      if (errors.length < maxErrors && typeof value === "string") {
+        const regex = new RegExp(pattern);
+        if (!regex.test(value)) {
+          errors.push({
+            path: buildPath(pathSegments),
+            message: `expected to match pattern ${pattern}`,
+          });
+        }
       }
     })
     .otherwise(() => {

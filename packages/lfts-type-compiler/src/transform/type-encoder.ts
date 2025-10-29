@@ -21,43 +21,171 @@ export function getPropName(name: ts.PropertyName): string {
 }
 
 /**
- * Detect and encode brand patterns in intersection types
+ * Annotation detection and encoding for prebuilt annotation types.
+ * Returns: { name: string, args?: any[] } for recognized annotations, null otherwise
+ */
+type Annotation =
+  | { name: "nominal" }
+  | { name: "email" }
+  | { name: "url" }
+  | { name: "pattern"; arg: string }
+  | { name: "minLength"; arg: number }
+  | { name: "maxLength"; arg: number }
+  | { name: "min"; arg: number }
+  | { name: "max"; arg: number }
+  | { name: "range"; min: number; max: number };
+
+function detectAnnotation(t: ts.TypeNode): Annotation | null {
+  if (!ts.isTypeReferenceNode(t)) return null;
+  if (!ts.isIdentifier(t.typeName)) return null;
+
+  const name = t.typeName.text;
+
+  // No-argument annotations
+  if (name === "Nominal") return { name: "nominal" };
+  if (name === "Email") return { name: "email" };
+  if (name === "Url") return { name: "url" };
+
+  // Single-argument annotations
+  if (name === "Pattern" || name === "MinLength" || name === "MaxLength" ||
+      name === "Min" || name === "Max") {
+    const typeArg = t.typeArguments?.[0];
+    if (!typeArg) return null;
+
+    if (ts.isLiteralTypeNode(typeArg)) {
+      if (ts.isStringLiteral(typeArg.literal)) {
+        const value = typeArg.literal.text;
+        if (name === "Pattern") return { name: "pattern", arg: value };
+      }
+      if (ts.isNumericLiteral(typeArg.literal)) {
+        const value = Number(typeArg.literal.text);
+        if (name === "MinLength") return { name: "minLength", arg: value };
+        if (name === "MaxLength") return { name: "maxLength", arg: value };
+        if (name === "Min") return { name: "min", arg: value };
+        if (name === "Max") return { name: "max", arg: value };
+      }
+    }
+  }
+
+  // Two-argument annotations (Range)
+  if (name === "Range") {
+    const minArg = t.typeArguments?.[0];
+    const maxArg = t.typeArguments?.[1];
+    if (minArg && maxArg && ts.isLiteralTypeNode(minArg) && ts.isLiteralTypeNode(maxArg)) {
+      if (ts.isNumericLiteral(minArg.literal) && ts.isNumericLiteral(maxArg.literal)) {
+        return {
+          name: "range",
+          min: Number(minArg.literal.text),
+          max: Number(maxArg.literal.text)
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Apply annotations to a base type by wrapping it with refinement bytecode.
+ */
+function applyAnnotations(baseType: Bytecode, annotations: Annotation[]): Bytecode {
+  let result = baseType;
+
+  for (const ann of annotations) {
+    switch (ann.name) {
+      case "nominal":
+        // Nominal is compile-time only, no wrapping
+        break;
+      case "email":
+        result = enc.refine.email(result);
+        break;
+      case "url":
+        result = enc.refine.url(result);
+        break;
+      case "pattern":
+        result = enc.refine.pattern(result, ann.arg);
+        break;
+      case "minLength":
+        result = enc.refine.minLength(result, ann.arg);
+        break;
+      case "maxLength":
+        result = enc.refine.maxLength(result, ann.arg);
+        break;
+      case "min":
+        result = enc.refine.min(result, ann.arg);
+        break;
+      case "max":
+        result = enc.refine.max(result, ann.arg);
+        break;
+      case "range":
+        result = enc.refine.min(enc.refine.max(result, ann.max), ann.min);
+        break;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Detect and encode brand patterns and refinement annotations in intersection types
  * Supports:
  *  1) Intersection: <Base> & { readonly __brand: "Tag" }
- *  2) Intersection: <Base> & Brand<"Tag"> (future)
+ *  2) Intersection: <Base> & Nominal (compile-time only)
+ *  3) Intersection: <Base> & Email (runtime check)
+ *  4) Intersection: <Base> & Min<0> & Max<100> (multiple refinements)
  *
  * @param node - Intersection type node
- * @returns Brand bytecode if pattern detected, null otherwise
+ * @returns Encoded bytecode if pattern detected, null otherwise
  */
 export function tryEncodeBrand(
   node: ts.IntersectionTypeNode,
 ): { bc: Bytecode } | null {
-  if (node.types.length !== 2) return null;
+  let baseType: ts.TypeNode | null = null;
+  let brandTag: string | null = null;
+  const annotations: Annotation[] = [];
 
-  const [a, b] = node.types;
+  // Scan all intersection members
+  for (const member of node.types) {
+    // Check for annotation
+    const ann = detectAnnotation(member);
+    if (ann) {
+      annotations.push(ann);
+      continue;
+    }
 
-  const isStructuralBrand = (t: ts.TypeNode): string | null => {
-    if (ts.isTypeLiteralNode(t)) {
-      const member = t.members.find((m): m is ts.PropertySignature =>
+    // Check for structural brand pattern
+    if (ts.isTypeLiteralNode(member)) {
+      const brandMember = member.members.find((m): m is ts.PropertySignature =>
         ts.isPropertySignature(m) && (m.name as any)?.text === "__brand"
       );
-      if (
-        member?.type && ts.isLiteralTypeNode(member.type) &&
-        ts.isStringLiteral(member.type.literal)
-      ) {
-        return member.type.literal.text;
+      if (brandMember?.type && ts.isLiteralTypeNode(brandMember.type) &&
+          ts.isStringLiteral(brandMember.type.literal)) {
+        brandTag = brandMember.type.literal.text;
+        continue;
       }
     }
-    return null;
-  };
 
-  const left = isStructuralBrand(a);
-  const right = isStructuralBrand(b);
+    // Otherwise, this is the base type
+    if (!baseType) {
+      baseType = member;
+    }
+  }
 
-  if (left && !right) return { bc: enc.brand(encodeType(b), left) };
-  if (right && !left) return { bc: enc.brand(encodeType(a), right) };
+  // Must have a base type
+  if (!baseType) return null;
 
-  return null;
+  // Encode base type
+  let result = encodeType(baseType);
+
+  // Apply brand if present
+  if (brandTag) {
+    result = enc.brand(result, brandTag);
+  }
+
+  // Apply refinement annotations
+  result = applyAnnotations(result, annotations);
+
+  return { bc: result };
 }
 
 function tryEncodeDiscriminatedUnion(node: ts.UnionTypeNode): Bytecode | null {

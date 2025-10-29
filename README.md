@@ -51,6 +51,50 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full Light-FP guidelines.
 See **LANG-SPEC.md** for the minimal language surface and **guide.mmd** for the
 engineering guide.
 
+## New in v0.4.0 (WIP): Prebuilt Type Annotations
+
+**Nominal types** (compile-time only):
+- `type UserId = string & Nominal` - Clean nominal typing without runtime cost
+
+**String refinements** (runtime validated):
+- `type UserEmail = string & Email` - Email format validation
+- `type Website = string & Url` - URL format validation
+- `type Phone = string & Pattern<"^\\+?[1-9]\\d{1,14}$">` - Custom regex patterns
+- `type Username = string & MinLength<3> & MaxLength<20>` - Length constraints
+
+**Numeric refinements** (runtime validated):
+- `type Age = number & Min<0> & Max<120>` - Min/max bounds
+- `type Percentage = number & Range<0, 100>` - Range constraint
+
+```ts
+import {
+  typeOf,
+  type Nominal,
+  type Email,
+  type Min,
+  type Max,
+  type MinLength,
+  type MaxLength
+} from "lfts-runtime";
+
+type User = {
+  readonly id: string & Nominal;           // Compile-time brand
+  readonly email: string & Email;          // Runtime validation
+  readonly username: string & MinLength<3> & MaxLength<20>;
+  readonly age: number & Min<0> & Max<120>;
+};
+
+export const User$ = typeOf<User>();
+
+// Runtime validation
+const result = validate(User$, {
+  id: "user_123",
+  email: "alice@example.com",  // ✅ valid
+  username: "alice",             // ✅ valid
+  age: 25                        // ✅ valid
+});
+```
+
 ## New in v0.3.0: ADT update
 
 - **Strict ADT discriminant**: the only allowed tag is `'type'` (policy

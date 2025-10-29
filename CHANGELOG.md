@@ -2,7 +2,46 @@
 
 All notable changes to the LFTS compiler project are documented here.
 
-## [Unreleased - v0.3.0]
+## [Unreleased - v0.4.0]
+
+### Added
+
+- **Prebuilt Type Annotations System**: Complete annotation framework with
+  compile-time and runtime validation
+
+  **Nominal Annotation** (compile-time only):
+  - `type UserId = string & Nominal` - Clean nominal typing
+  - Replaces verbose `{ readonly __brand: "UserId" }` pattern
+  - Zero runtime overhead: compiler strips annotation
+  - Compile-time type safety preserved
+
+  **String Refinements** (runtime validated):
+  - `Email` - Email format validation (simple regex)
+  - `Url` - URL format validation (uses URL constructor)
+  - `Pattern<P>` - Custom regex pattern validation
+  - `MinLength<N>` - Minimum string length
+  - `MaxLength<N>` - Maximum string length
+
+  **Numeric Refinements** (runtime validated):
+  - `Min<N>` - Minimum numeric value (>=)
+  - `Max<N>` - Maximum numeric value (<=)
+  - `Range<Min, Max>` - Numeric range (>= Min and <= Max)
+
+  **Implementation**:
+  - New opcodes: `REFINE_EMAIL`, `REFINE_URL`, `REFINE_PATTERN`
+  - Encoder helpers: `enc.refine.email()`, `enc.refine.url()`, `enc.refine.pattern()`
+  - Compiler recognizes all annotation types in intersections
+  - Runtime validates refinements in both `validate()` and `validateAll()`
+  - Test coverage: `ok_nominal`, `ok_refinements` fixtures
+  - Composable: `string & MinLength<3> & MaxLength<20> & Email`
+
+  **Benefits**:
+  - Addresses VALIDATOR_GAPS.md "No refinements" issue
+  - Clean, discoverable API (import from runtime)
+  - Type-safe parameters (TypeScript enforces correct usage)
+  - Structured error messages with validation context
+
+## [Released - v0.3.0]
 
 ### Added
 

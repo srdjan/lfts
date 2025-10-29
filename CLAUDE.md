@@ -44,13 +44,13 @@ deno run -A packages/lfts-type-runtime/benchmark-union.ts
 
 ## Test Suite Status
 
-**Current**: 15/18 tests passing (83% pass rate)
+**Current**: 17/20 tests passing (85% pass rate)
 
-The compiler test suite has 18 golden tests in
+The compiler test suite has 20 golden tests in
 [packages/lfts-type-compiler/src/testing/fixtures/](packages/lfts-type-compiler/src/testing/fixtures/).
 As of the latest refactoring work:
 
-- ✅ **15 tests passing** - All core LFTS rules are working correctly
+- ✅ **17 tests passing** - All core LFTS rules are working correctly
 - ❌ **3 tests failing** - Known limitations documented in
   [KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md)
 
@@ -105,6 +105,14 @@ The LFTS runtime validator has been optimized for high-performance validation:
    - Reject unknown object properties
    - Usage: `enc.obj(props, true)` for strict mode
    - Minimal overhead (<5%) when enabled
+
+5. **Prebuilt Type Annotations** (v0.4.0): **Clean nominal typing and runtime refinements**
+   - **Nominal**: Compile-time branding (`string & Nominal`) - zero runtime cost
+   - **String refinements**: `Email`, `Url`, `Pattern<P>`, `MinLength<N>`, `MaxLength<N>`
+   - **Numeric refinements**: `Min<N>`, `Max<N>`, `Range<Min, Max>`
+   - Composable: `string & MinLength<3> & MaxLength<20> & Email`
+   - Replaces verbose `{ readonly __brand: "UserId" }` pattern
+   - Addresses VALIDATOR_GAPS.md "No refinements" limitation
 
 ### Performance Characteristics
 

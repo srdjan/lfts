@@ -28,6 +28,9 @@ export enum Op {
   REFINE_MAX_LENGTH,
   REFINE_MIN_ITEMS,
   REFINE_MAX_ITEMS,
+  REFINE_EMAIL,
+  REFINE_URL,
+  REFINE_PATTERN,
   // result/option combinators (Phase 1)
   RESULT_OK,
   RESULT_ERR,
@@ -93,6 +96,9 @@ export const enc = {
       t: Bytecode,
       count: number,
     ): Bytecode => [Op.REFINE_MAX_ITEMS, count, t],
+    email: (t: Bytecode): Bytecode => [Op.REFINE_EMAIL, t],
+    url: (t: Bytecode): Bytecode => [Op.REFINE_URL, t],
+    pattern: (t: Bytecode, pattern: string): Bytecode => [Op.REFINE_PATTERN, pattern, t],
   },
 
   // result/option combinators (Phase 1)

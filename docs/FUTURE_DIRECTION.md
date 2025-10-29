@@ -9,162 +9,13 @@ subset so bytecode contains only canonical data constructs (primitives, objects,
 unions, brands, readonly wrappers). The runtime is therefore a **lean validation
 VM** with Result-based APIs and DUNION-powered discriminant dispatch.
 
----
-
-## Phase 0: Implemented Features
-
-This section documents features that have been fully implemented and are
-available in the current release.
-
-### Phase 1.1: Result/Option Combinators ✅
-
-**Status:** Implemented and tested
-
-**Implementation Summary:**
-
-- **Bytecode opcodes**: Added `Op.RESULT_OK`, `Op.RESULT_ERR`, `Op.OPTION_SOME`,
-  `Op.OPTION_NONE` for structural validation
-- **Runtime types**: Introduced `Option<T>` type alongside existing
-  `Result<T, E>`
-- **Result combinators**: `ok()`, `err()`, `map()`, `andThen()`, `mapErr()`,
-  `ensure()`, `unwrapOr()`, `isOk()`, `isErr()`
-- **Option combinators**: `some()`, `none()`, `first()`, `from()`, `map()`,
-  `andThen()`, `okOr()`, `unwrapOr()`, `isSome()`, `isNone()`, `zip()`
-- **Policy rule LFP1020**: Warning-level rule detecting imperative if/else
-  branching on Result/Option types, suggesting combinator usage instead
-- **Test coverage**: 17 golden tests (compiler) + 40 unit tests (runtime) = 57
-  passing tests
-- **Examples**: 10 comprehensive real-world examples in
-  [packages/lfts-type-runtime/result-option-examples.ts](../packages/lfts-type-runtime/result-option-examples.ts)
-
-**Key Benefits Achieved:**
-
-- Declarative error handling without manual branching
-- Type-safe composition of fallible operations
-- Consistent API across Option and Result types
-- Compiler guidance (LFP1020) encouraging functional patterns
-- Zero breaking changes - fully backward compatible
-
-#### Before / After Comparison
-
-**Before** (manual branching and error propagation):
-
-```ts
-const getPrimaryEmail = (emails: string[]): Result<string> => {
-  if (emails.length === 0) {
-    return Result.err("missing primary email");
-  }
-  const primary = normalizeEmail(emails[0]);
-  if (!isValidEmail(primary)) {
-    return Result.err("invalid email format");
-  }
-  return Result.ok(primary);
-};
-```
-
-**After** (declarative combinators):
-
-```ts
-import { Option, Result } from "../runtime/mod.ts";
-
-const getPrimaryEmail = (emails: string[]): Result<string, string> =>
-  Option.first(emails) // lift array access into Option
-    .okOr("missing primary email") // convert Option → Result
-    .andThen(normalizeEmail) // chain transformation
-    .ensure(isValidEmail, "invalid email format"); // validate result
-```
-
-**Configuration Parser Example:**
-
-```ts
-// Real-world usage: parsing and validating configuration
-type AppConfig = {
-  readonly host: string;
-  readonly port: number;
-  readonly timeout: number;
-  readonly ssl: boolean;
-};
-
-type RawConfig = {
-  readonly host?: string;
-  readonly port?: string;
-  readonly timeout?: string;
-  readonly ssl?: string;
-};
-
-const parseConfig = (raw: RawConfig): Result<AppConfig, string> => {
-  // Required fields with clear error messages
-  const hostResult = Option.okOr(Option.from(raw.host), "Host is required");
-  if (!hostResult.ok) return hostResult;
-
-  const portResult = Option.okOr(Option.from(raw.port), "Port is required");
-  if (!portResult.ok) return portResult;
-
-  const portNum = Number(portResult.value);
-  if (isNaN(portNum) || portNum <= 0 || portNum >= 65536) {
-    return Result.err("Port must be between 1 and 65535");
-  }
-
-  // Optional fields with defaults
-  const timeoutOpt = Option.map(Option.from(raw.timeout), Number);
-  const timeout = Option.unwrapOr(timeoutOpt, 5000);
-
-  const sslOpt = Option.map(Option.from(raw.ssl), (s) => s === "true");
-  const ssl = Option.unwrapOr(sslOpt, false);
-
-  return Result.ok({
-    host: hostResult.value,
-    port: portNum,
-    timeout,
-    ssl,
-  });
-};
-```
-
-**Compiler Policy LFP1020:**
-
-The compiler now warns when it detects imperative if/else branching on
-Result/Option types:
-
-```ts
-// ⚠️ LFP1020 Warning: Consider using combinators
-export const processUser = (result: Result<User, string>): string => {
-  if (result.ok) {
-    return `User: ${result.value.name}`;
-  } else {
-    return `Error: ${result.error}`;
-  }
-};
-
-// ✅ Recommended: Use combinators
-export const processUser = (result: Result<User, string>): string =>
-  Result.map(result, (u) => `User: ${u.name}`)
-    .unwrapOr(`Error: ${result.ok ? "" : result.error}`);
-```
-
-**Files Modified:**
-
-- [packages/lfts-type-spec/src/mod.ts](../packages/lfts-type-spec/src/mod.ts) -
-  Added opcodes and encoders
-- [packages/lfts-type-runtime/mod.ts](../packages/lfts-type-runtime/mod.ts) -
-  Added Option type, Result/Option combinators, validators
-- [packages/lfts-type-compiler/src/policy/context.ts](../packages/lfts-type-compiler/src/policy/context.ts) -
-  Added warning severity support
-- [packages/lfts-type-compiler/src/policy/rules/no-imperative-branching.ts](../packages/lfts-type-compiler/src/policy/rules/no-imperative-branching.ts) -
-  New LFP1020 rule
-- [packages/lfts-type-runtime/combinators.test.ts](../packages/lfts-type-runtime/combinators.test.ts) -
-  40 unit tests
-- [packages/lfts-type-runtime/result-option-examples.ts](../packages/lfts-type-runtime/result-option-examples.ts) -
-  Comprehensive examples
-
-**Test Results:**
-
-```bash
-$ deno task test
-✅ 17 golden tests passing (compiler policy enforcement)
-✅ 40 unit tests passing (runtime combinators)
-✅ 3 known failures (documented in KNOWN_ISSUES.md)
-```
+**Already Implemented (v0.3.0):**
+- Result/Option combinators with full API
+- LFP1020 policy rule for imperative branching detection
+- DUNION tag caching for ADT validation
+- Lazy path construction optimization
+- Union result-based validation
+- Optional strict excess-property checking
 
 ---
 
@@ -203,26 +54,6 @@ const result = rawUser
 - **Compatibility:** This remains an optional ergonomic layer. Existing
   validators and manual chaining patterns stay valid until the feature becomes
   available.
-
-### Result/Option Combinators ✅ **COMPLETED**
-
-**Status:** Implemented in Phase 1.1 - See
-[Phase 0: Implemented Features](#phase-0-implemented-features) above for full
-details.
-
-- **Pillars:** ✅ Deepens errors-as-values and pure workflows; types-first
-  upheld by combinator APIs
-- **Compiler:** ✅ Added LFP1020 policy rule (warning) preventing imperative
-  branching
-- **Bytecode:** ✅ Implemented `Op.RESULT_OK`, `Op.RESULT_ERR`,
-  `Op.OPTION_SOME`, `Op.OPTION_NONE` for structural validation
-- **Runtime:** ✅ Full combinator API with 8 Result methods and 11 Option
-  methods
-- **Tests:** ✅ 57 passing tests (17 golden + 40 unit tests)
-- **Compatibility:** ✅ Fully backward compatible, additive changes only
-
-See the comprehensive before/after examples, configuration parser use case, and
-test results in the Phase 0 section above.
 
 ### Runtime Introspection Hooks
 
@@ -266,49 +97,69 @@ validateOrder(payload); // hook fires only on failure
 
 ---
 
-## Custom Type Annotations
+## Prebuilt Type Annotations
 
-- **Status:** Planned enhancement inspired by Deepkit-style metadata types; not
-  implemented in the current compiler.
-- **Concept:** Custom type annotations let developers attach convention-based
-  metadata to types without altering runtime shapes. The compiler reads the
-  metadata and emits specialized bytecode or runtime helpers while keeping
-  developer ergonomics lightweight.
-- **Syntax Convention:** An annotation is expressed as an object literal type
-  whose only optional property is `__meta`, holding a tuple. The tuple’s first
-  element is a string literal that names the annotation, and any subsequent
-  entries are configuration payloads.
+- **Status:** Planned enhancement for ergonomic refinements and nominal typing;
+  not implemented in the current compiler.
+- **Concept:** The runtime exports prebuilt annotation types (like `Nominal`,
+  `Email`, `Min<N>`) that developers import and compose via intersections. The
+  compiler recognizes these well-known annotations and emits specialized
+  bytecode for runtime validation, keeping the syntax clean and discoverable.
+
+**Prebuilt Annotations (exported from runtime):**
 
 ```ts
-type MyAnnotation = { __meta?: ["myAnnotation"] };
-```
+// Nominal typing (compile-time only, no runtime check)
+export type Nominal = { readonly __meta?: ["nominal"] };
 
-```ts
-type AnnotationOption<T extends { title: string }> = {
-  __meta?: ["myAnnotation", T];
+// String refinements
+export type Email = { readonly __meta?: ["email"] };
+export type Url = { readonly __meta?: ["url"] };
+export type Pattern<P extends string> = { readonly __meta?: ["pattern", P] };
+export type MinLength<N extends number> = { readonly __meta?: ["minLength", N] };
+export type MaxLength<N extends number> = { readonly __meta?: ["maxLength", N] };
+
+// Numeric refinements
+export type Min<N extends number> = { readonly __meta?: ["min", N] };
+export type Max<N extends number> = { readonly __meta?: ["max", N] };
+export type Range<Min extends number, Max extends number> = {
+  readonly __meta?: ["range", Min, Max]
 };
 ```
 
-- **Combination:** Intersections compose multiple annotations, allowing types to
-  accumulate metadata layers.
+**Usage (clean and discoverable):**
 
 ```ts
+import type { Nominal, Email, Min, Max } from "lfts-runtime";
+
 type UserId = string & Nominal;
-type ValidatedEmail = string & Email & Validated<{ minLength: 5 }>;
+type UserEmail = string & Email;
+type Age = number & Min<0> & Max<120>;
+type Username = string & MinLength<3> & MaxLength<20>;
+
+type User = {
+  id: UserId;
+  email: UserEmail;
+  age: Age;
+  username: Username;
+};
 ```
 
-- **Compiler Behavior:** During the transform pass the compiler will detect the
-  `__meta` signature, register the annotation by its identifier, and generate
-  bytecode/runtime support aligned with the annotation’s semantics. The `__meta`
-  property is erased from emitted code, keeping annotation mechanics invisible
-  at runtime.
-- **Runtime Support:** Annotated types can trigger targeted helpers (e.g.,
-  validation primitives, serialization hooks) without polluting userland types,
-  maintaining a clean API.
-- **Relationship to Existing Features:** Extends today’s brand pattern
-  (`string & { readonly __brand: "UserId" }`) into a general annotation layer
-  supporting nominal typing, validation constraints, serialization hints, and
-  other custom behaviors while preserving the Result-first philosophy.
+- **Compiler Behavior:** During the transform pass the compiler detects
+  intersections with well-known annotation types. For each annotation, it emits
+  appropriate bytecode:
+  - `Nominal` → No runtime check (type-level only)
+  - `Email`, `Url` → `Op.REFINE` with pattern validation
+  - `Min<N>`, `Max<N>` → `Op.REFINE` with numeric bounds
+  - `Pattern<P>` → `Op.REFINE` with custom regex
+- **Runtime Support:** The validator executes `Op.REFINE` bytecode and returns
+  structured errors when constraints fail, maintaining Result-based error
+  reporting.
+- **Extensibility:** Users can define custom annotations if needed by following
+  the `__meta` convention, but prebuilt annotations cover common cases.
+- **Relationship to Existing Features:** Replaces today's verbose brand pattern
+  (`string & { readonly __brand: "UserId" }`) with imported annotations, while
+  adding runtime validation for refinements that were previously missing.
 
 ---
 
@@ -537,7 +388,7 @@ await rpcBridge.advertise(binaryBundle.manifest); // share Result contracts acro
 ## Prioritization
 
 1. **Phase 1 features** deliver immediate developer benefit with minimal
-   compiler churn (pipelines, combinators, introspection)
+   compiler churn (pipelines when available, introspection)
 2. **Capability validation and memoization** (Phase 2) next—they extend Light-FP
    into service architecture while controlling scope
 3. **Advanced FP constructs, tracing, and cross-runtime support** (Phase 3)
@@ -584,805 +435,45 @@ the runtime from a validation VM into a broader functional toolkit.
 
 ---
 
-## Appendix A: Enhancements to Existing Planned Features
+## Appendix: High-Priority Feature Proposals
 
-This section proposes specific improvements and alternative approaches to the
-features already outlined above.
+This section proposes specific enhancements that address known gaps and
+developer pain points.
 
-### Phase 1 Enhancements
+### Error Aggregation with Limits (High Priority)
 
-#### Pure Function Pipelines - Enhancements
-
-**1. Type-safe error accumulation in pipelines**
-
-Current proposal assumes first-failure short-circuit. Consider adding parallel
-validation mode:
-
-```ts
-// Enhanced pipeline with error accumulation option
-const validateUserInput = pipeOf<RawInput, ValidatedUser>(
-  { mode: "accumulate" }, // collect all validation errors
-  validateEmail,
-  validateAge,
-  validateAddress,
-);
-
-// Returns Result with either value OR all accumulated errors
-const result = validateUserInput(input);
-// result.error.issues → [{path: "email", ...}, {path: "age", ...}]
-```
-
-**Benefits**: Better UX for form validation scenarios; single validation pass
-shows all issues **Complexity**: Medium - requires modifying Result type to
-support error arrays **Trade-off**: May conflict with "first-failure" philosophy
-in VALIDATOR_GAPS.md, but offers pragmatic developer experience
-
-**2. Pipeline branching/conditional stages**
-
-```ts
-const processOrder = pipeOf<Order, ProcessedOrder>(
-  normalizeOrder,
-  branch({
-    when: (o) => o.amount > 1000,
-    then: applyEnterpriseDiscount,
-    else: applyStandardDiscount,
-  }),
-  calculateTax,
-);
-```
-
-**Benefits**: Declarative conditional logic without breaking pure pipelines
-**Complexity**: Low - syntactic sugar over existing composition
-**Consideration**: Ensure branches maintain referential transparency
-
-**3. Pipeline debugging/tracing integration**
-
-```ts
-const saveUser = pipeOf<RawUser, PersistedUser>(
-  normalizeName,
-  validateEmail.trace("email-validation"), // declarative trace points
-  toPersisted,
-);
-```
-
-**Benefits**: Built-in observability without polluting business logic
-**Complexity**: Low - integrates with Phase 3 trace engine **Implementation**:
-Add optional `.trace()` method to pipeline stages
-
-#### Result/Option Combinators - Enhancements
-
-**1. Async Result/Promise interop**
-
-Current proposal shows sync operations. Add first-class async support:
-
-```ts
-import { AsyncResult } from "../runtime/combinators.ts";
-
-const loadUser = (id: UserId): AsyncResult<User> =>
-  AsyncResult.from(fetchUserAPI(id))
-    .andThen(validateUserSchema)
-    .mapErr(enrichErrorContext)
-    .timeout(5000, "User fetch timeout");
-```
-
-**Benefits**: Handles real-world async boundaries (DB, HTTP, FS) without Promise
-hell **Complexity**: Medium - requires AsyncResult monad with proper error
-channel **Critical for**: Ports pattern where most I/O is async
-
-**2. Result.collect for batch operations**
-
-```ts
-// Validate array of items, collect all errors or return all successes
-const results = Result.collect([user1, user2, user3].map(validateUser));
-// Result<User[], ValidationError[]> - either all succeed or return all errors
-```
-
-**Benefits**: Batch validation for lists without manual iteration
-**Complexity**: Low - utility function over existing Result type **Use case**:
-Validating imported CSV rows, bulk API responses
-
-**3. Option.zip for combining multiple optional values**
-
-```ts
-const fullAddress = Option.zip(
-  Option.from(user.street),
-  Option.from(user.city),
-  Option.from(user.zip),
-).map(([street, city, zip]) => `${street}, ${city} ${zip}`);
-```
-
-**Benefits**: Cleaner composition when multiple optionals must all be present
-**Complexity**: Low - utility function **Alternative**: Use Result.ensure with
-validation logic
-
-#### Runtime Introspection Hooks - Enhancements
-
-**1. Schema diffing for migration safety**
-
-```ts
-const oldSchema = Task$_v1;
-const newSchema = Task$_v2;
-
-const diff = introspect.diff(oldSchema, newSchema);
-// { added: ["priority"], removed: [], changed: [{ field: "status", ... }] }
-
-if (!diff.isBackwardCompatible()) {
-  throw new Error("Breaking schema change detected");
-}
-```
-
-**Benefits**: Prevents accidental breaking changes in data contracts
-**Complexity**: Medium - requires schema traversal and comparison logic **Use
-case**: API versioning, database migrations, stored data validation
-
-**2. Schema-to-JSON-Schema export**
-
-```ts
-const jsonSchema = introspect.toJSONSchema(Task$);
-// Standard JSON Schema for OpenAPI, documentation, other tools
-```
-
-**Benefits**: Interop with existing JSON Schema ecosystem (Swagger, validators)
-**Complexity**: Medium - bidirectional mapping between LFTS bytecode and JSON
-Schema **Addresses**: VALIDATOR_GAPS.md mentions "No JSON Schema export"
-
-**3. Live schema reloading for development**
-
-```ts
-if (Deno.env.get("ENV") === "development") {
-  introspect.watchSchemas("./src/**/*.schema.ts", {
-    onReload: (schemaName) => console.log(`Reloaded: ${schemaName}`),
-  });
-}
-```
-
-**Benefits**: Hot-reload validation schemas without restarting dev server
-**Complexity**: High - requires file watching and dynamic schema replacement
-**Trade-off**: Dev-only feature, impacts bundle size unless tree-shaken
-
-### Phase 2 Enhancements
-
-#### Capability/Port Contract Validation - Enhancements
-
-**1. Runtime port contract verification**
-
-Current proposal validates method signatures. Add runtime behavior contracts:
-
-```ts
-const NotificationPortSchema = PortSchema.define({
-  sendEmail: capabilityOf(emailCapabilitySchema)
-    .ensures({
-      timeout: 5000, // max execution time
-      retries: 3, // retry policy
-      idempotent: true, // can safely retry
-    }),
-});
-
-// Wrap adapter with contract enforcement
-const wrappedPort = NotificationPortSchema.wrap(emailAdapter);
-// Automatically enforces timeout, retries, logs violations
-```
-
-**Benefits**: Enforces SLA contracts, prevents runaway operations
-**Complexity**: High - requires async interception and policy enforcement
-**Consideration**: May require effect tracking (Phase 2) for full implementation
-
-**2. Port mocking/stubbing for tests**
-
-```ts
-const mockStorage = PortSchema.mock(StoragePort$, {
-  load: () => Result.ok('{"tasks": []}'),
-  save: () => Result.ok(true),
-});
-
-// Type-safe mocks with automatic contract validation
-const result = handleCommand(store, clock, io, mockStorage, addCmd);
-```
-
-**Benefits**: First-class testing support for ports pattern **Complexity**:
-Medium - code generation for mock implementations **Critical for**: Test-driven
-development with LFTS
-
-**3. Port composition/delegation**
-
-```ts
-// Compose multiple storage backends with fallback
-const resilientStorage = PortSchema.compose(
-  primaryStorage,
-  { fallback: secondaryStorage, cacheLayer: redisCache },
-);
-```
-
-**Benefits**: Declarative port composition without manual delegation code
-**Complexity**: Medium - requires port interceptors and retry logic **Use
-case**: Multi-region failover, caching layers, circuit breakers
-
-#### Effect Tracking Runtime - Enhancements
-
-**1. Effect batching and optimization**
-
-```ts
-const batchedQueries = effectOf.batch<UserId, User>("db.query", {
-  batchSize: 100,
-  batchWindow: 10, // ms
-  executor: (ids) => db.getUsersBatch(ids),
-});
-
-// Automatically batches individual calls into bulk operations
-const users = await Promise.all(userIds.map((id) => batchedQueries.run(id)));
-```
-
-**Benefits**: Automatic N+1 query prevention, better database performance
-**Complexity**: High - requires batching queue and deduplication **Critical
-for**: Production performance with heavy I/O
-
-**2. Effect replay/time-travel debugging**
-
-```ts
-const effectLog = effectOf<Invoice, PersistedInvoice>(
-  "db.save",
-  (ctx, invoice) => ctx.perform(saveInvoice, invoice),
-  { recordInputs: true },
-);
-
-// Later: replay effects for debugging
-const replay = effectLog.replayFrom(timestamp);
-```
-
-**Benefits**: Reproduce production bugs, audit trail for compliance
-**Complexity**: High - requires serializable effect logs and replay engine
-**Trade-off**: Storage overhead for effect logs
-
-**3. Effect cancellation and cleanup**
-
-```ts
-const uploadFile = effectOf<File, URL>("fs.upload", (ctx, file) => {
-  const handle = ctx.perform(startUpload, file);
-
-  ctx.onCancel(() => {
-    cleanupUpload(handle); // automatic cleanup on cancellation
-  });
-
-  return handle;
-});
-
-// Cancellation propagates cleanup
-const controller = new AbortController();
-uploadFile.run(file, { signal: controller.signal });
-controller.abort(); // triggers cleanup
-```
-
-**Benefits**: Proper resource management, prevents leaks **Complexity**: High -
-requires cancellation propagation through effect tree **Critical for**:
-Long-running operations, user-initiated cancellations
-
-#### Memoization & Lazy Evaluation - Enhancements
-
-**1. Cache eviction policies**
-
-```ts
-export const loadAccount = memoOf(retrieveAccount, {
-  key: (id: AccountId) => id.value,
-  eviction: {
-    strategy: "lru",
-    maxSize: 1000,
-    ttl: 60_000, // 60 seconds
-  },
-});
-```
-
-**Benefits**: Prevents unbounded memory growth, stale data control
-**Complexity**: Medium - requires cache management with size/time policies
-**Critical for**: Long-running servers
-
-**2. Conditional memoization**
-
-```ts
-export const loadAccount = memoOf(retrieveAccount, {
-  key: (id: AccountId) => id.value,
-  shouldCache: (result) => result.ok && !result.value.deleted,
-  // Don't cache errors or deleted accounts
-});
-```
-
-**Benefits**: Fine-grained cache control based on result value **Complexity**:
-Low - predicate function over result **Use case**: Skip caching errors, cache
-only valid states
-
-**3. Distributed/shared cache support**
-
-```ts
-export const loadAccount = memoOf(retrieveAccount, {
-  key: (id: AccountId) => id.value,
-  storage: redisCache, // external cache backend
-  serialize: (account) => JSON.stringify(account),
-  deserialize: (json) => validate(Account$, JSON.parse(json)),
-});
-```
-
-**Benefits**: Share cache across multiple processes/servers **Complexity**:
-High - requires serialization, external storage integration **Use case**:
-Multi-instance deployments, serverless functions
-
-### Phase 3 Enhancements
-
-#### Monadic/Functor Runtime Library - Enhancements
-
-**1. Do-notation syntax sugar**
-
-```ts
-// Current proposal requires chaining
-const enrichOrder = (input: RawOrder): Result<EnrichedOrder> =>
-  ResultMonad.of(input)
-    .map(normalizeOrder)
-    .flatMap(priceOrder)
-    .map(renderConfirmation)
-    .run();
-
-// Enhanced: Generator-based do-notation
-const enrichOrder = ResultMonad.do(function* (input: RawOrder) {
-  const normalized = yield* normalizeOrder(input);
-  const priced = yield* priceOrder(normalized);
-  return renderConfirmation(priced);
-});
-```
-
-**Benefits**: More readable for complex flows with intermediate values
-**Complexity**: Medium - requires generator support and type inference
-**Alternative**: Consider Rust-style `?` operator if TypeScript adds it
-
-**2. Transformer/Lens support for nested updates**
-
-```ts
-import { lens } from "../runtime/optics.ts";
-
-const updateAddress = lens<User>()
-  .prop("profile")
-  .prop("address")
-  .prop("street");
-
-const updated = updateAddress.set(user, "123 Main St");
-// Immutable deep update without manual spreading
-```
-
-**Benefits**: Clean nested immutable updates without spread hell **Complexity**:
-Medium - requires type-safe lens implementation **Use case**: Deep state updates
-in pure domain logic
-
-**3. Free monad for DSL construction**
-
-```ts
-// Define workflow DSL using free monad
-type WorkflowF<A> =
-  | { tag: "fetch"; url: string; next: (data: unknown) => A }
-  | {
-    tag: "validate";
-    schema: any[];
-    data: unknown;
-    next: (result: Result<unknown>) => A;
-  }
-  | { tag: "save"; data: unknown; next: () => A };
-
-const workflow = Free.do(function* () {
-  const raw = yield* fetch("/api/users");
-  const validated = yield* validate(User$, raw);
-  yield* save(validated);
-  return validated;
-});
-
-// Interpret workflow with different backends (real, mock, test)
-const result = await workflow.interpret(productionInterpreter);
-```
-
-**Benefits**: Separate workflow definition from execution, testability
-**Complexity**: High - advanced FP concept, may violate "Light" principles
-**Trade-off**: Powerful but potentially too abstract for target audience
-
-#### Debugger & Trace Engine - Enhancements
-
-**1. Distributed tracing integration (OpenTelemetry)**
-
-```ts
-export const buildInvoice = withTrace(invoiceSchema, {
-  exportTo: openTelemetryExporter,
-  spanName: "validate-invoice",
-  attributes: { service: "billing" },
-});
-```
-
-**Benefits**: Integration with existing observability infrastructure
-**Complexity**: Medium - requires OpenTelemetry SDK integration **Critical
-for**: Production microservices, observability
-
-**2. Time-travel debugging with snapshots**
-
-```ts
-const debugSession = TraceEngine.capture(() => {
-  const result = processOrder(rawOrder);
-  return result;
-});
-
-// Later: step through execution
-debugSession.stepForward();
-debugSession.stepBackward();
-debugSession.inspectState("normalizedOrder");
-```
-
-**Benefits**: Interactive debugging for complex validation flows **Complexity**:
-Very High - requires execution recording and replay **Trade-off**: Significant
-runtime overhead, dev-only feature
-
-**3. Selective tracing with sampling**
-
-```ts
-export const buildInvoice = withTrace(invoiceSchema, {
-  sampleRate: 0.01, // Trace 1% of invocations
-  traceOnError: true, // Always trace failures
-});
-```
-
-**Benefits**: Reduces tracing overhead in production **Complexity**: Low -
-probabilistic sampling logic **Critical for**: Production performance
-
-#### Cross-runtime Interop - Enhancements
-
-**1. Schema versioning and compatibility checks**
-
-```ts
-const binaryBundle = emitBytecode(orderSchema, {
-  target: "wasm",
-  version: "2.0.0",
-  compatibleWith: ["1.x.x"], // semver range
-});
-
-// Runtime checks compatibility before loading
-await wasmPort.load(binaryBundle, { enforceCompatibility: true });
-```
-
-**Benefits**: Safe schema evolution across runtime boundaries **Complexity**:
-Medium - requires version metadata and compatibility rules **Critical for**:
-Long-lived systems with multiple deployments
-
-**2. Multi-language code generation**
-
-```ts
-// Generate validation code for other languages from LFTS schemas
-const rustCode = codeGen.toRust(orderSchema);
-const goCode = codeGen.toGo(orderSchema);
-
-// Share single source of truth across polyglot services
-```
-
-**Benefits**: Consistent validation across microservices in different languages
-**Complexity**: Very High - requires code generators for each target language
-**Alternative**: JSON Schema export (simpler) + language-specific validators
-
-**3. Browser/Worker optimization**
-
-```ts
-const binaryBundle = emitBytecode(orderSchema, {
-  target: "browser",
-  optimize: {
-    minify: true,
-    stripDebug: true,
-    inlineSmallSchemas: true,
-  },
-});
-
-// Minimal bundle for client-side validation
-```
-
-**Benefits**: Smaller bundles, faster client-side validation **Complexity**:
-Medium - requires bytecode optimization passes **Use case**: Form validation,
-API client libraries
-
----
-
-## Appendix B: New Feature Proposals
-
-This section proposes entirely new features that would enhance the LFTS compiler
-and runtime.
-
-### B1: Schema-Driven Code Generation (Phase 1-2)
-
-**Description**: Generate boilerplate code from schema definitions
+**Description**: Collect multiple validation errors instead of failing fast
 
 **Use Cases**:
 
 ```ts
-// Given schema
-export type UserSchema = {
-  id: UserId;
-  name: string;
-  email: string;
-  role: "admin" | "user";
-};
+// Current: First-failure only
+const result = validate(User$, data);
+// result.error → single error
 
-// Compiler generates:
-export const User$ = [...]; // bytecode (existing)
-
-// NEW: Generated builders
-export const UserBuilder = {
-  create: (id: UserId, name: string, email: string, role: "admin" | "user"): User =>
-    validate(User$, { id, name, email, role }),
-
-  // Lenses for immutable updates
-  update: {
-    name: (user: User, name: string): User => ({ ...user, name }),
-    email: (user: User, email: string): User => ({ ...user, email }),
-  },
-
-  // Type-safe partial constructors
-  partial: {
-    withName: (name: string) => (user: Partial<User>) => ({ ...user, name }),
-  },
-};
+// Proposed: Aggregate errors
+const result = validateAll(User$, data, { maxErrors: 10 });
+// result.errors → [
+//   { path: "email", message: "invalid format" },
+//   { path: "age", message: "must be >= 0" },
+//   { path: "address.zip", message: "required" },
+// ]
 ```
 
 **Benefits**:
-
-- Eliminates manual builder/lens boilerplate
-- Type-safe updates without spread operator errors
-- Consistent API across all schemas
+- Better UX for form validation
+- See all issues in one pass
+- Configurable error limit prevents runaway validation
 
 **Implementation**:
-
-- **Compiler**: New transform pass after schema-root encoding
-- **Bytecode**: No new opcodes, uses existing schemas
-- **Configuration**: `lfts.config.json` flag `generateBuilders: boolean`
+- **Runtime**: New `validateAll()` function
+- **Bytecode**: No changes, interpreter collects errors
+- **Result type**: Supports `ValidationResult<T>` with error array
 
 **Complexity**: Medium
+**Related**: Addresses VALIDATOR_GAPS.md #1 "First-failure only"
 
-- Leverage existing schema AST from typeOf rewriter
-- Generate TypeScript declarations alongside bytecode
-- Ensure generated code follows LFTS rules
-
-**Trade-offs**:
-
-- Increases generated code size
-- Opt-in via config to avoid bloat for simple projects
-- May conflict with custom builder patterns
-
-### B2: Compile-Time Refinement Validation (Phase 1)
-
-**Description**: Validate refinement constraints at compile-time for literal
-values
-
-**Use Cases**:
-
-```ts
-// Schema with refinements
-type PositiveInt = number & { readonly __refine: { min: 1; integer: true } };
-
-// Compile-time error for invalid literals
-const age: PositiveInt = -5; // ❌ LFP1017: Value -5 violates refinement min: 1
-const price: PositiveInt = 19.99; // ❌ LFP1017: Value 19.99 violates refinement integer: true
-
-// Valid literals pass
-const quantity: PositiveInt = 10; // ✅
-```
-
-**Benefits**:
-
-- Catch constraint violations before runtime
-- No performance overhead for validated constants
-- Stronger type safety for configuration values
-
-**Implementation**:
-
-- **Compiler**: New policy rule `compile-time-refinements` (LFP1017)
-- **Gate**: No changes
-- **Policy**: Analyze literal assignments and check against refinements
-- **Transform**: Emit bytecode with refinement annotations
-
-**Complexity**: Medium
-
-- Requires analyzing type refinement annotations
-- Check literal values against numeric/string constraints
-- Handle const enums and computed constants
-
-**Trade-offs**:
-
-- Only works for literal values (not variables)
-- Requires new refinement annotation syntax
-- May duplicate TypeScript's type narrowing
-
-**Related**: Addresses VALIDATOR_GAPS.md "No refinements" limitation
-
-### B3: Port Adapter Auto-Generation (Phase 2)
-
-**Description**: Generate port adapter boilerplate from interface definitions
-
-**Use Cases**:
-
-```ts
-// Port interface
-export interface StoragePort {
-  load(): Promise<Result<string>>;
-  save(data: string): Promise<Result<void>>;
-}
-
-// NEW: Compiler generates adapter template
-// storage.adapter.ts (generated)
-export function createStorageAdapter(config: StorageConfig): StoragePort {
-  return {
-    load: async () => {
-      // TODO: implement load logic
-      return Result.ok("");
-    },
-    save: async (data: string) => {
-      // TODO: implement save logic
-      return Result.ok(undefined);
-    },
-  };
-}
-
-// Also generates mock for testing
-export const mockStoragePort: StoragePort = {
-  load: async () => Result.ok('{"tasks":[]}'),
-  save: async (_) => Result.ok(undefined),
-};
-```
-
-**Benefits**:
-
-- Reduces boilerplate for port implementations
-- Ensures adapters match port contracts
-- Auto-generated mocks for testing
-
-**Implementation**:
-
-- **Compiler**: New CLI command `deno task lfts:generate-adapter StoragePort`
-- **Policy**: Validate port interface before generation
-- **Output**: TypeScript files with TODO stubs
-
-**Complexity**: Medium
-
-- Parse port interface declarations
-- Generate TypeScript function skeletons
-- Handle async/sync Result types
-
-**Trade-offs**:
-
-- Separate CLI step, not automatic compilation
-- Generated code requires manual implementation
-- May encourage "implement later" technical debt
-
-**Related**: Enhances Phase 2 "Capability/Port Contract Validation"
-
-### B4: Transactional State Updates (Phase 2)
-
-**Description**: Atomic state updates with automatic rollback on validation
-failure
-
-**Use Cases**:
-
-```ts
-import { transaction } from "../runtime/transaction.ts";
-
-// Current: Manual rollback on validation failure
-function addTask(store: Store, task: Task): Store {
-  const next = new Map(store.tasks);
-  next.set(task.id, task);
-
-  try {
-    validate(TaskList$, { tasks: Array.from(next.values()) });
-    return { tasks: next };
-  } catch {
-    // Manual cleanup, error-prone
-    return store;
-  }
-}
-
-// NEW: Automatic rollback via transaction
-function addTask(store: Store, task: Task): Result<Store> {
-  return transaction(() => {
-    const next = new Map(store.tasks);
-    next.set(task.id, task);
-
-    const validated = validateSafe(TaskList$, {
-      tasks: Array.from(next.values()),
-    });
-
-    if (!validated.ok) {
-      // Transaction automatically rolls back
-      return Result.err(validated.error);
-    }
-
-    return Result.ok({ tasks: next });
-  });
-}
-```
-
-**Benefits**:
-
-- Prevent invalid intermediate states
-- Automatic rollback on validation errors
-- Cleaner error handling for multi-step updates
-
-**Implementation**:
-
-- **Runtime**: New `transaction()` function with checkpoint/restore
-- **Bytecode**: No new opcodes
-- **Integration**: Works with existing Result types
-
-**Complexity**: Medium-High
-
-- Requires copy-on-write semantics or structural sharing
-- Handle nested transactions
-- Performance overhead for large state
-
-**Trade-offs**:
-
-- Memory overhead for state snapshots
-- May encourage large state objects (anti-pattern)
-- Alternative: Encourage smaller, validatable updates
-
-**Related**: Complements Phase 1 Result combinators
-
-### B5: Branded Newtypes with Runtime Validation (Phase 1)
-
-**Description**: Attach validation logic to brand types for automatic
-enforcement
-
-**Use Cases**:
-
-```ts
-// Current: Manual validation at brand boundaries
-export type Email = string & { readonly __brand: "Email" };
-
-function createEmail(raw: string): Result<Email> {
-  if (!raw.includes("@")) return Result.err("invalid email");
-  return Result.ok(raw as Email);
-}
-
-// NEW: Branded type with validation schema
-export type Email = string & {
-  readonly __brand: "Email";
-  readonly __validate: { pattern: /^[^@]+@[^@]+\.[^@]+$/ };
-};
-
-// Compiler auto-generates constructor
-export const Email = Brand.define<Email>({
-  from: (raw: string) => {
-    if (!/^[^@]+@[^@]+\.[^@]+$/.test(raw)) {
-      return Result.err({ field: "email", message: "invalid format" });
-    }
-    return Result.ok(raw as Email);
-  },
-});
-
-// Usage
-const email = Email.from("user@example.com"); // Result<Email>
-```
-
-**Benefits**:
-
-- Centralized validation for branded types
-- Automatic constructor generation
-- Type-safe brand boundaries
-
-**Implementation**:
-
-- **Compiler**: Detect brand types with `__validate` property
-- **Transform**: Generate Brand.define() constructor
-- **Policy**: New rule LFP1018 enforcing validation schema
-
-**Complexity**: Medium
-
-- Parse brand type annotations
-- Generate validation functions
-- Integrate with existing refinement system
-
-**Trade-offs**:
-
-- Adds new `__validate` magic property
-- May duplicate refinement logic
-- Increases complexity of brand pattern
-
-**Related**: Addresses VALIDATOR_GAPS.md "No brand-carrying runtime checks"
-
-### B6: Schema Composition Operators (Phase 1)
+### Schema Composition Operators
 
 **Description**: Composable schema transformations for common patterns
 
@@ -1400,43 +491,40 @@ const PublicUser$ = Schema.omit(User$, ["passwordHash", "ssn"]);
 // Make all properties optional (for partial updates)
 const UserPatch$ = Schema.partial(User$);
 
-// Make all properties required
-const CompleteUser$ = Schema.required(UserDraft$);
-
 // Merge multiple schemas
 const ExtendedUser$ = Schema.merge(User$, { createdAt: enc.num() });
-
-// Validate and transform
-const result = validate(UserSummary$, data);
 ```
 
 **Benefits**:
-
 - Reduce schema duplication
 - Type-safe schema derivations
 - Runtime and compile-time consistency
 
-**Implementation**:
-
-- **Runtime**: New `Schema` utility module
-- **Bytecode**: Operate on existing bytecode arrays
-- **Types**: Use TypeScript utility types (Pick, Omit, Partial, Required)
-
 **Complexity**: Medium
 
-- Traverse and transform bytecode at runtime
-- Ensure type-level and runtime-level stay synchronized
-- Handle nested schemas and unions
+### Async Result/Promise Interop
 
-**Trade-offs**:
+**Description**: First-class async support for Result combinators
 
-- Runtime schema manipulation has cost
-- May conflict with "explicit schema" philosophy
-- Alternative: Code generation at compile-time
+**Use Cases**:
 
-**Related**: Common request in schema libraries (Zod, Yup)
+```ts
+import { AsyncResult } from "../runtime/combinators.ts";
 
-### B7: Incremental Compilation (Phase 1)
+const loadUser = (id: UserId): AsyncResult<User, string> =>
+  AsyncResult.from(fetchUserAPI(id))
+    .andThen(validateUserSchema)
+    .mapErr(enrichErrorContext)
+    .timeout(5000, "User fetch timeout");
+```
+
+**Benefits**: Handles real-world async boundaries (DB, HTTP, FS) without Promise
+hell
+
+**Complexity**: Medium
+**Critical for**: Ports pattern where most I/O is async
+
+### Incremental Compilation
 
 **Description**: Only recompile changed schema files for faster builds
 
@@ -1447,355 +535,62 @@ const result = validate(UserSummary$, data);
 $ deno task build
 Compiling 150 .schema.ts files... (3.2s)
 
-# NEW: Incremental compilation
+# Proposed: Incremental compilation
 $ deno task build
 Cached: 148 files
 Compiling: 2 changed files... (0.2s)
 ```
 
 **Benefits**:
-
 - Faster development iteration
 - Reduced build times for large projects
 - Better IDE responsiveness
 
 **Implementation**:
-
 - **Compiler**: Cache bytecode output keyed by file hash
 - **CLI**: New `--incremental` flag (default: true)
 - **Storage**: `.lfts-cache/` directory with compiled artifacts
 
 **Complexity**: High
 
-- Dependency tracking between schema files
-- Cache invalidation on schema changes
-- Handle transitive dependencies
+### Port Mocking/Stubbing for Tests
 
-**Trade-offs**:
-
-- Additional disk space for cache
-- Complexity in cache invalidation logic
-- May mask errors from stale cache
-
-**Related**: Standard feature in modern compilers (tsc, Rust, etc.)
-
-### B8: Error Aggregation with Limits (Phase 1)
-
-**Description**: Collect multiple validation errors instead of failing fast
+**Description**: Generate type-safe mocks for port interfaces
 
 **Use Cases**:
 
 ```ts
-// Current: First-failure only
-const result = validateSafe(User$, data);
-// result.error → single error
-
-// NEW: Aggregate errors
-const result = validateAll(User$, data, { maxErrors: 10 });
-// result.errors → [
-//   { path: "email", message: "invalid format" },
-//   { path: "age", message: "must be >= 0" },
-//   { path: "address.zip", message: "required" },
-// ]
-```
-
-**Benefits**:
-
-- Better UX for form validation
-- See all issues in one pass
-- Configurable error limit prevents runaway validation
-
-**Implementation**:
-
-- **Runtime**: New `validateAll()` function
-- **Bytecode**: No changes, interpreter collects errors
-- **Result type**: Already supports `ValidationResult<T>` with error array
-
-**Complexity**: Medium
-
-- Modify validator to continue after errors
-- Track error count and respect limit
-- Aggregate errors from nested structures
-
-**Trade-offs**:
-
-- Performance cost of continuing validation after errors
-- May produce confusing cascading errors
-- Configurable limit mitigates unbounded work
-
-**Related**: VALIDATOR_GAPS.md lists this as "High Priority" (#1)
-
-### B9: Port Contract Testing Framework (Phase 2)
-
-**Description**: Automated contract testing for port implementations
-
-**Use Cases**:
-
-```ts
-// Define port contract tests
-const StoragePortTests = PortContract.define(StoragePort$, {
-  tests: {
-    "should load empty string on first run": async (port) => {
-      const result = port.load();
-      assert(result === "");
-    },
-
-    "should persist and retrieve data": async (port) => {
-      const data = JSON.stringify({ tasks: [] });
-      const saved = port.save(data);
-      assert(saved === true);
-
-      const loaded = port.load();
-      assert(loaded === data);
-    },
-
-    "should be idempotent": async (port) => {
-      const data = JSON.stringify({ tasks: [] });
-      port.save(data);
-      port.save(data);
-      // Should not error on duplicate save
-    },
-  },
-
-  properties: {
-    idempotent: ["save"],
-    timeout: { load: 1000, save: 1000 },
-  },
+const mockStorage = PortSchema.mock(StoragePort$, {
+  load: () => Result.ok('{"tasks": []}'),
+  save: () => Result.ok(undefined),
 });
 
-// Run tests against implementation
-const fileStorage = fileStorageAdapter("/tmp/test.json");
-await StoragePortTests.verify(fileStorage);
+// Type-safe mocks with automatic contract validation
+const result = handleCommand(store, clock, io, mockStorage, addCmd);
 ```
 
-**Benefits**:
-
-- Ensure adapters satisfy port contracts
-- Reusable test suites for all implementations
-- Property-based testing for ports
-
-**Implementation**:
-
-- **Runtime**: New `PortContract` testing framework
-- **Integration**: Works with Deno test runner
-- **Policy**: Validate contract definitions
-
-**Complexity**: High
-
-- Define contract testing DSL
-- Generate test cases from properties
-- Handle async/cleanup for stateful ports
-
-**Trade-offs**:
-
-- New testing abstraction to learn
-- May duplicate existing test logic
-- Requires discipline to maintain contracts
-
-**Related**: Enhances Phase 2 port validation
-
-### B10: Query DSL for Data Transformation (Phase 2)
-
-**Description**: Type-safe query language for filtering and transforming
-validated data
-
-**Use Cases**:
-
-```ts
-import { Query } from "../runtime/query.ts";
-
-// Type-safe queries over validated data
-const activeAdminUsers = Query.from(users)
-  .where((u) => u.role === "admin")
-  .where((u) => u.active === true)
-  .select((u) => ({ id: u.id, name: u.name }))
-  .sortBy((u) => u.name)
-  .take(10);
-
-// Compiles to efficient iteration, no ORM overhead
-const results = activeAdminUsers.execute(); // { id: UserId, name: string }[]
-```
-
-**Benefits**:
-
-- Declarative data transformation
-- Type-safe field access and filtering
-- No runtime query parsing
-
-**Implementation**:
-
-- **Runtime**: Query builder with type-safe combinators
-- **Bytecode**: No changes, operates on validated data
-- **Types**: Leverage TypeScript's type inference
-
+**Benefits**: First-class testing support for ports pattern
 **Complexity**: Medium
-
-- Implement query combinators (where, select, sortBy, etc.)
-- Ensure type safety through builder pattern
-- Optimize for common patterns (indexed access)
-
-**Trade-offs**:
-
-- Not a full query engine (no joins, aggregations)
-- May encourage data transformation in domain layer (anti-pattern)
-- Alternative: Use standard Array methods
-
-**Related**: Lightweight alternative to ORMs for pure FP
-
-### B11: Compile-Time Schema Validation (Phase 1)
-
-**Description**: Catch invalid schemas at compile-time instead of runtime
-
-**Use Cases**:
-
-```ts
-// Current: Runtime error during validation
-export type BadSchema = {
-  callback: () => void; // Functions not allowed in schemas
-};
-export const BadSchema$ = typeOf<BadSchema>(); // ❌ Runtime error
-
-// NEW: Compile-time error
-export type BadSchema = {
-  callback: () => void;
-};
-export const BadSchema$ = typeOf<BadSchema>();
-// ❌ LFP1003: Data schema contains function-typed field 'callback'
-```
-
-**Benefits**:
-
-- Faster feedback cycle (compile vs runtime)
-- Catch errors before tests/production
-- Consistent with other LFTS policy rules
-
-**Implementation**:
-
-- **Compiler**: Analyze `typeOf<T>()` type argument in policy pass
-- **Policy**: Extend data-no-functions rule to typeOf call sites
-- **Gate**: No changes
-
-**Complexity**: Low
-
-- Reuse existing policy rules
-- Check type argument before transform
-
-**Trade-offs**:
-
-- Already partially implemented (data-no-functions rule)
-- May not catch all cases due to TypeScript API limitations
-- Complements runtime validation, doesn't replace it
-
-**Related**: Moves error detection earlier in development cycle
-
-### B12: Schema Registry for Shared Contracts (Phase 3)
-
-**Description**: Centralized registry for sharing schemas across
-modules/services
-
-**Use Cases**:
-
-```ts
-// Register schemas globally
-SchemaRegistry.register("User", User$);
-SchemaRegistry.register("Task", Task$);
-
-// Use schemas by name (no import needed)
-const user = validate(SchemaRegistry.get("User"), data);
-
-// Cross-service schema sharing
-const manifest = SchemaRegistry.export();
-await rpcBridge.publishSchemas(manifest);
-
-// Client fetches schemas
-const remoteUser$ = await rpcBridge.fetchSchema("User");
-```
-
-**Benefits**:
-
-- Decouple schema definition from usage
-- Enable dynamic schema loading
-- Share contracts across network boundaries
-
-**Implementation**:
-
-- **Runtime**: Global `Map<string, Bytecode>` registry
-- **Compiler**: Optional schema export manifest
-- **Serialization**: Binary bytecode format for network transfer
-
-**Complexity**: High
-
-- Schema versioning and compatibility
-- Registry invalidation on schema changes
-- Security concerns (schema injection)
-
-**Trade-offs**:
-
-- Global state (may conflict with pure FP principles)
-- Tight coupling to registry
-- Alternative: Explicit imports (current approach)
-
-**Related**: VALIDATOR_GAPS.md mentions "No schema registry"
-
----
-
-## Prioritization Matrix
-
-### High Value, Low Effort (Ship First)
-
-1. **B8: Error Aggregation** - Addresses #1 gap in VALIDATOR_GAPS.md
-2. **B6: Schema Composition** - Common pain point, pure runtime
-3. **B11: Compile-Time Validation** - Small compiler enhancement
-4. **B7: Incremental Compilation** - Direct developer productivity win
-
-### High Value, Medium Effort (Next Phase)
-
-5. **B1: Schema-Driven Code Generation** - Reduces boilerplate significantly
-6. **B5: Branded Newtypes with Validation** - Strengthens type safety
-7. **B2: Compile-Time Refinements** - Early error detection
-8. **B4: Transactional State Updates** - Safety for complex updates
-
-### High Value, High Effort (Long-Term)
-
-9. **B3: Port Adapter Auto-Generation** - Major ports pattern enhancement
-10. **B9: Port Contract Testing** - Essential for production ports
-11. **B12: Schema Registry** - Enables distributed systems
-
-### Lower Priority (Optional/Niche)
-
-12. **B10: Query DSL** - Niche use case, standard Array methods work
-13. **Free Monads** (A3.3) - Too abstract for "Light" FP
-14. **Time-Travel Debugging** (A3.2) - High cost, dev-only
+**Critical for**: Test-driven development with LFTS
 
 ---
 
 ## Implementation Sequencing Recommendation
 
-### Release v0.4.0
-
-- B8: Error Aggregation
-- B11: Compile-Time Schema Validation
-- B7: Incremental Compilation
-- Phase 1 Enhancements: Async Result, Pipeline tracing
+### Release v0.4.0 (Next)
+- Error Aggregation with configurable limits
+- Async Result/Promise interop
+- Schema composition operators (pick, omit, partial, merge)
+- Incremental compilation support
 
 ### Release v0.5.0
-
-- B1: Schema-Driven Code Generation
-- B6: Schema Composition Operators
-- B5: Branded Newtypes with Validation
-- Phase 2 Enhancements: Port mocking, Cache eviction
+- Runtime introspection hooks
+- Port mocking/stubbing framework
+- Custom type annotations foundation
+- Cache eviction policies for memoization
 
 ### Release v0.6.0
-
-- B2: Compile-Time Refinements
-- B3: Port Adapter Auto-Generation
-- B4: Transactional State Updates
-- Phase 3 Enhancements: OpenTelemetry integration
-
----
-
-## Summary
-
-This roadmap keeps the Light-FP philosophy intact—**types-first schemas, pure
-domain logic, and Result-based error reporting**—while progressively widening
-the runtime from a validation VM into a broader functional toolkit.
+- Capability/Port contract validation
+- Effect tracking runtime (basic IO/State)
+- Distributed tracing integration (OpenTelemetry)
+- Binary bytecode serialization for WASM/RPC
