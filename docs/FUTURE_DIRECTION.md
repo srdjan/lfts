@@ -1,23 +1,14 @@
 # LFTS Future Direction
 
+This document outlines planned features and the development roadmap for LFTS. For currently implemented features, see [FEATURES.md](FEATURES.md).
+
+---
+
 ## Scope Overview
 
-The current runtime executes compiler-emitted opcode arrays to validate unknown
-data at the boundary, optionally serialize it without transformation, and
-surface errors as values. Gate/policy/transform passes enforce the Light-FP
-subset so bytecode contains only canonical data constructs (primitives, objects,
-unions, brands, readonly wrappers). The runtime is therefore a **lean validation
-VM** with Result-based APIs and DUNION-powered discriminant dispatch.
+The current runtime executes compiler-emitted opcode arrays to validate unknown data at the boundary, optionally serialize it without transformation, and surface errors as values. Gate/policy/transform passes enforce the Light-FP subset so bytecode contains only canonical data constructs (primitives, objects, unions, brands, readonly wrappers). The runtime is therefore a **lean validation VM** with Result-based APIs and DUNION-powered discriminant dispatch.
 
-**Already Implemented (v0.4.0):**
-- Result/Option combinators with full API (v0.3.0)
-- LFP1020 policy rule for imperative branching detection (v0.3.0)
-- DUNION tag caching for ADT validation (v0.2.0)
-- Lazy path construction optimization (v0.2.0)
-- Union result-based validation (v0.3.0)
-- Optional strict excess-property checking (v0.3.0)
-- Prebuilt Type Annotations (v0.4.0) - Nominal types and refinements
-- Runtime Introspection Hooks (v0.4.0) - `inspect()` and `withMetadata()`
+**For implemented features, see [FEATURES.md](FEATURES.md)**
 
 ---
 
@@ -27,11 +18,8 @@ VM** with Result-based APIs and DUNION-powered discriminant dispatch.
 
 ### Pure Function Pipelines _(Future once `|>` lands)_
 
-- **Status:** Planned enhancement; blocked until the TC39 pipeline operator
-  (`|>`) reaches Stage 4 and ships in TypeScript/JavaScript ecosystems. No
-  pipeline helper exists in the current runtime.
-- **Intended UX:** When the language-level operator is available, LFTS users
-  should be able to compose pure, schema-validated functions declaratively:
+- **Status:** Planned enhancement; blocked until the TC39 pipeline operator (`|>`) reaches Stage 4 and ships in TypeScript/JavaScript ecosystems. No pipeline helper exists in the current runtime.
+- **Intended UX:** When the language-level operator is available, LFTS users should be able to compose pure, schema-validated functions declaratively:
 
 ```ts
 // Future: when |> operator is standardized
@@ -41,145 +29,10 @@ const result = rawUser
   |> toPersisted;
 ```
 
-- **Dependency:** We will adopt the canonical TC39 pipeline semantics to avoid
-  bespoke syntax. Implementation work begins only after the proposal is
-  finalized and TypeScript emits the operator in its downlevel output or native
-  targets.
-- **Compiler:** Once the operator is supported, the compiler will analyze `|>`
-  chains inside schema-approved modules and emit `Op.PIPELINE` metadata
-  describing the ordered function handles. Until then, no pipeline-specific
-  passes are run.
-- **Runtime Support:** The runtime will introduce a pipeline registry and
-  executor that short-circuits on the first `Result.Err` while preserving
-  type-safe payloads. We will also expose structured diagnostics for each stage
-  to keep error reporting aligned with the Result model.
-- **Compatibility:** This remains an optional ergonomic layer. Existing
-  validators and manual chaining patterns stay valid until the feature becomes
-  available.
-
-### Runtime Introspection Hooks ✅ **IMPLEMENTED (v0.4.0)**
-
-- **Status:** Fully implemented with `inspect()` and `withMetadata()` APIs
-- **Pillars:** Supports developers without mutating data path; pure core
-  preserved as hooks are side-effect snapshots
-- **Bytecode:** Added `Op.METADATA` opcode to wrap schemas with metadata
-- **Runtime:** Provides `inspect()` wrapper with `onSuccess` and `onFailure` hooks
-- **Compatibility:** Opt-in via wrapper pattern; no bundle cost unless used
-
-#### Implementation
-
-The runtime now provides introspection capabilities through two APIs:
-
-1. **`withMetadata(schema, metadata)`** - Attaches metadata to a schema
-2. **`inspect(schema, configure)`** - Wraps schema with observability hooks
-
-**Example Usage:**
-
-```ts
-import { inspect, withMetadata } from "lfts-runtime";
-
-// Attach metadata to schema
-const OrderSchema = withMetadata(orderBytecode, {
-  name: "Order",
-  source: "src/types/order.schema.ts",
-});
-
-// Create inspectable wrapper with hooks
-const InspectedOrderSchema = inspect<Order>(OrderSchema, (ctx) => {
-  ctx.onFailure((error) => {
-    debugBus.emit("order:invalid", {
-      schema: ctx.schemaName, // "Order"
-      source: ctx.schemaSource, // "src/types/order.schema.ts"
-      error,
-    });
-  });
-
-  ctx.onSuccess((value) => {
-    metrics.recordValidation(ctx.schemaName, "success");
-  });
-});
-
-// Use the inspectable schema
-const result = InspectedOrderSchema.validate(payload);
-// Hooks fire automatically based on validation outcome
-```
-
-**Features:**
-- Zero runtime cost when not used (opt-in wrapper pattern)
-- Multiple hooks can be registered per event
-- Hook errors are caught and logged to prevent breaking validation
-- Works with all validation methods: `validate()`, `validateUnsafe()`, `validateAll()`
-- Metadata transparently passes through validation
-
-**Testing:**
-- Full test suite in `packages/lfts-type-runtime/introspection.test.ts`
-- Example usage in `packages/lfts-type-runtime/introspection-example.ts`
-
----
-
-## Prebuilt Type Annotations
-
-- **Status:** Planned enhancement for ergonomic refinements and nominal typing;
-  not implemented in the current compiler.
-- **Concept:** The runtime exports prebuilt annotation types (like `Nominal`,
-  `Email`, `Min<N>`) that developers import and compose via intersections. The
-  compiler recognizes these well-known annotations and emits specialized
-  bytecode for runtime validation, keeping the syntax clean and discoverable.
-
-**Prebuilt Annotations (exported from runtime):**
-
-```ts
-// Nominal typing (compile-time only, no runtime check)
-export type Nominal = { readonly __meta?: ["nominal"] };
-
-// String refinements
-export type Email = { readonly __meta?: ["email"] };
-export type Url = { readonly __meta?: ["url"] };
-export type Pattern<P extends string> = { readonly __meta?: ["pattern", P] };
-export type MinLength<N extends number> = { readonly __meta?: ["minLength", N] };
-export type MaxLength<N extends number> = { readonly __meta?: ["maxLength", N] };
-
-// Numeric refinements
-export type Min<N extends number> = { readonly __meta?: ["min", N] };
-export type Max<N extends number> = { readonly __meta?: ["max", N] };
-export type Range<Min extends number, Max extends number> = {
-  readonly __meta?: ["range", Min, Max]
-};
-```
-
-**Usage (clean and discoverable):**
-
-```ts
-import type { Nominal, Email, Min, Max } from "lfts-runtime";
-
-type UserId = string & Nominal;
-type UserEmail = string & Email;
-type Age = number & Min<0> & Max<120>;
-type Username = string & MinLength<3> & MaxLength<20>;
-
-type User = {
-  id: UserId;
-  email: UserEmail;
-  age: Age;
-  username: Username;
-};
-```
-
-- **Compiler Behavior:** During the transform pass the compiler detects
-  intersections with well-known annotation types. For each annotation, it emits
-  appropriate bytecode:
-  - `Nominal` → No runtime check (type-level only)
-  - `Email`, `Url` → `Op.REFINE` with pattern validation
-  - `Min<N>`, `Max<N>` → `Op.REFINE` with numeric bounds
-  - `Pattern<P>` → `Op.REFINE` with custom regex
-- **Runtime Support:** The validator executes `Op.REFINE` bytecode and returns
-  structured errors when constraints fail, maintaining Result-based error
-  reporting.
-- **Extensibility:** Users can define custom annotations if needed by following
-  the `__meta` convention, but prebuilt annotations cover common cases.
-- **Relationship to Existing Features:** Replaces today's verbose brand pattern
-  (`string & { readonly __brand: "UserId" }`) with imported annotations, while
-  adding runtime validation for refinements that were previously missing.
+- **Dependency:** We will adopt the canonical TC39 pipeline semantics to avoid bespoke syntax. Implementation work begins only after the proposal is finalized and TypeScript emits the operator in its downlevel output or native targets.
+- **Compiler:** Once the operator is supported, the compiler will analyze `|>` chains inside schema-approved modules and emit `Op.PIPELINE` metadata describing the ordered function handles. Until then, no pipeline-specific passes are run.
+- **Runtime Support:** The runtime will introduce a pipeline registry and executor that short-circuits on the first `Result.Err` while preserving type-safe payloads. We will also expose structured diagnostics for each stage to keep error reporting aligned with the Result model.
+- **Compatibility:** This remains an optional ergonomic layer. Existing validators and manual chaining patterns stay valid until the feature becomes available.
 
 ---
 
@@ -189,12 +42,8 @@ type User = {
 
 ### Capability/Port Contract Validation
 
-- **Pillars:** Honors types-first by validating port interfaces; enforces
-  errors-as-values via structured capability diagnostics; pure core maintained
-  if effects stay outside domain
-- **Compiler:** Gate bans dynamic method creation on ports; policy enforces
-  explicit `PortSchema` exports; transform emits `Op.PORT` describing method
-  signatures and Result envelopes
+- **Pillars:** Honors types-first by validating port interfaces; enforces errors-as-values via structured capability diagnostics; pure core maintained if effects stay outside domain
+- **Compiler:** Gate bans dynamic method creation on ports; policy enforces explicit `PortSchema` exports; transform emits `Op.PORT` describing method signatures and Result envelopes
 - **Bytecode:** Add `Op.PORT`, `Op.METHOD`, `Op.EFFECT_TAG`
 - **Compatibility:** Ports optional; data-only projects unaffected
 
@@ -230,14 +79,10 @@ ensureNotificationPort(port); // runtime emits structured capability diagnostics
 
 ### Effect Tracking Runtime (IO, State)
 
-- **Pillars:** Extends pure core by explicitly labeling effects rather than
-  hiding them; types-first via effect schemas; Result channel carries effect
-  logs
-- **Compiler:** New policy ensuring effect-producing functions return
-  `Effect<Result>`; transform expands `effectOf<T>()` to bytecode
+- **Pillars:** Extends pure core by explicitly labeling effects rather than hiding them; types-first via effect schemas; Result channel carries effect logs
+- **Compiler:** New policy ensuring effect-producing functions return `Effect<Result>`; transform expands `effectOf<T>()` to bytecode
 - **Bytecode:** Introduce `Op.EFFECT`, `Op.EFFECT_SEQ`, `Op.EFFECT_PAR`
-- **Compatibility:** Needs versioned bytecode; older runtime ignores unknown
-  opcodes → require minor version bump
+- **Compatibility:** Needs versioned bytecode; older runtime ignores unknown opcodes → require minor version bump
 
 #### Before / After
 
@@ -266,13 +111,10 @@ persistInvoice.run(invoice).toResult(); // unwrap Result plus effect log metadat
 
 ### Memoization & Lazy Evaluation
 
-- **Pillars:** Supports performance while preserving purity (memo tables keyed
-  by validated inputs); types-first by requiring deterministic schemas
-- **Compiler:** Policy ensures memoized functions declare referential
-  transparency; transform decorates functions with cache metadata
+- **Pillars:** Supports performance while preserving purity (memo tables keyed by validated inputs); types-first by requiring deterministic schemas
+- **Compiler:** Policy ensures memoized functions declare referential transparency; transform decorates functions with cache metadata
 - **Bytecode:** `Op.MEMO_START`, `Op.MEMO_END`, `Op.LAZY`
-- **Compatibility:** Caches optional; default runtime bypasses memo ops if
-  compiled without support
+- **Compatibility:** Caches optional; default runtime bypasses memo ops if compiled without support
 
 #### Before / After
 
@@ -309,13 +151,10 @@ loadAccount(id); // memo metadata compiled into Op.MEMO_* bytecode
 
 ### Monadic/Functor Runtime Library
 
-- **Pillars:** Codifies errors-as-values (Either/Result monad), encourages pure
-  transformations; types-first via algebraic schemas for contexts
-- **Compiler:** Gate forbids ad-hoc mutation in monad builders; policy requires
-  Kind tagging; transform emits `Op.KIND_MAP`, `Op.KIND_FLATMAP`
+- **Pillars:** Codifies errors-as-values (Either/Result monad), encourages pure transformations; types-first via algebraic schemas for contexts
+- **Compiler:** Gate forbids ad-hoc mutation in monad builders; policy requires Kind tagging; transform emits `Op.KIND_MAP`, `Op.KIND_FLATMAP`
 - **Bytecode:** New ops for functor/monad combinators
-- **Compatibility:** Library-level addition; ensure fallback implementations
-  degrade gracefully
+- **Compatibility:** Library-level addition; ensure fallback implementations degrade gracefully
 
 #### Before / After
 
@@ -344,8 +183,7 @@ const enrichOrder = (input: RawOrder): Result<EnrichedOrder> =>
 
 ### Debugger & Trace Engine
 
-- **Pillars:** Aids developer insight while keeping execution deterministic;
-  types-first via typed trace entries
+- **Pillars:** Aids developer insight while keeping execution deterministic; types-first via typed trace entries
 - **Compiler:** Optional transform generating trace markers
 - **Bytecode:** `Op.TRACE_PUSH`, `Op.TRACE_POP` (stripped in production builds)
 - **Compatibility:** Make tracing opt-in with compiler flag
@@ -376,13 +214,10 @@ buildInvoice(payload, { trace: true }); // opt-in flag emits typed trace frames
 
 ### Cross-runtime Interop (WASM, RPC)
 
-- **Pillars:** Preserves pure core by shipping bytecode to constrained
-  environments; errors-as-values via cross-runtime Result marshalling
-- **Compiler:** Transform outputs binary bytecode variant; policy ensures
-  portable subset only
+- **Pillars:** Preserves pure core by shipping bytecode to constrained environments; errors-as-values via cross-runtime Result marshalling
+- **Compiler:** Transform outputs binary bytecode variant; policy ensures portable subset only
 - **Bytecode:** Binary serialization format; no new logical ops
-- **Compatibility:** Requires dual emit path (JS + binary); ensure current JS
-  array format still supported
+- **Compatibility:** Requires dual emit path (JS + binary); ensure current JS array format still supported
 
 #### Before / After
 
@@ -405,93 +240,9 @@ await rpcBridge.advertise(binaryBundle.manifest); // share Result contracts acro
 
 ---
 
-## Prioritization
-
-1. **Phase 1 features** deliver immediate developer benefit with minimal
-   compiler churn (pipelines when available, introspection)
-2. **Capability validation and memoization** (Phase 2) next—they extend Light-FP
-   into service architecture while controlling scope
-3. **Advanced FP constructs, tracing, and cross-runtime support** (Phase 3)
-   bring significant value but demand careful design and larger surface-area
-   changes; schedule after earlier phases ship and stabilize
-
----
-
-## Trade-offs & Risks
-
-### Complexity Creep
-
-Each feature widens the runtime's mandate; mitigate via opt-in flags and strict
-guardrails in policy rules.
-
-### Bundle Size & Performance
-
-New opcodes and helpers expand the runtime. Maintain tree-shakable modules;
-monitor bytecode decoding cost.
-
-### Deviation from "Light" Principles
-
-Introducing heavy abstractions (monads, effect systems) risks overwhelming
-users. Anchor decisions to Light-FP's simplicity goal—favor composable
-primitives over layered frameworks.
-
-### Backward Compatibility
-
-New bytecode ops require version negotiation. Plan semantic versioning and
-feature detection to ensure old schemas still run.
-
-### Compiler Maintenance
-
-Additional passes and metadata raise complexity. Keep transformations
-incremental and reuse existing schema-root machinery.
-
----
-
-## Summary
-
-This roadmap keeps the Light-FP philosophy intact—**types-first schemas, pure
-domain logic, and Result-based error reporting**—while progressively widening
-the runtime from a validation VM into a broader functional toolkit.
-
----
-
 ## Appendix: High-Priority Feature Proposals
 
-This section proposes specific enhancements that address known gaps and
-developer pain points.
-
-### Error Aggregation with Limits (High Priority)
-
-**Description**: Collect multiple validation errors instead of failing fast
-
-**Use Cases**:
-
-```ts
-// Current: First-failure only
-const result = validate(User$, data);
-// result.error → single error
-
-// Proposed: Aggregate errors
-const result = validateAll(User$, data, { maxErrors: 10 });
-// result.errors → [
-//   { path: "email", message: "invalid format" },
-//   { path: "age", message: "must be >= 0" },
-//   { path: "address.zip", message: "required" },
-// ]
-```
-
-**Benefits**:
-- Better UX for form validation
-- See all issues in one pass
-- Configurable error limit prevents runaway validation
-
-**Implementation**:
-- **Runtime**: New `validateAll()` function
-- **Bytecode**: No changes, interpreter collects errors
-- **Result type**: Supports `ValidationResult<T>` with error array
-
-**Complexity**: Medium
-**Related**: Addresses VALIDATOR_GAPS.md #1 "First-failure only"
+This section proposes specific enhancements that address known gaps and developer pain points.
 
 ### Schema Composition Operators
 
@@ -538,8 +289,7 @@ const loadUser = (id: UserId): AsyncResult<User, string> =>
     .timeout(5000, "User fetch timeout");
 ```
 
-**Benefits**: Handles real-world async boundaries (DB, HTTP, FS) without Promise
-hell
+**Benefits**: Handles real-world async boundaries (DB, HTTP, FS) without Promise hell
 
 **Complexity**: Medium
 **Critical for**: Ports pattern where most I/O is async
@@ -597,20 +347,60 @@ const result = handleCommand(store, clock, io, mockStorage, addCmd);
 
 ## Implementation Sequencing Recommendation
 
-### Release v0.4.0 (Next)
-- Error Aggregation with configurable limits
+### Release v0.5.0 (Next)
 - Async Result/Promise interop
 - Schema composition operators (pick, omit, partial, merge)
 - Incremental compilation support
-
-### Release v0.5.0
-- Runtime introspection hooks
 - Port mocking/stubbing framework
-- Custom type annotations foundation
-- Cache eviction policies for memoization
 
 ### Release v0.6.0
 - Capability/Port contract validation
 - Effect tracking runtime (basic IO/State)
+- Cache eviction policies for memoization
 - Distributed tracing integration (OpenTelemetry)
+
+### Release v0.7.0
+- Monadic/Functor runtime library
+- Debugger & Trace Engine
 - Binary bytecode serialization for WASM/RPC
+- Pure Function Pipelines (when TC39 `|>` is available)
+
+---
+
+## Prioritization
+
+1. **Phase 2 features** (Async interop, schema composition, incremental compilation) deliver immediate developer benefit and are independent of language features
+2. **Capability validation and memoization** extend Light-FP into service architecture while controlling scope
+3. **Advanced FP constructs, tracing, and cross-runtime support** (Phase 3) bring significant value but demand careful design and larger surface-area changes; schedule after earlier phases ship and stabilize
+
+---
+
+## Trade-offs & Risks
+
+### Complexity Creep
+
+Each feature widens the runtime's mandate; mitigate via opt-in flags and strict guardrails in policy rules.
+
+### Bundle Size & Performance
+
+New opcodes and helpers expand the runtime. Maintain tree-shakable modules; monitor bytecode decoding cost.
+
+### Deviation from "Light" Principles
+
+Introducing heavy abstractions (monads, effect systems) risks overwhelming users. Anchor decisions to Light-FP's simplicity goal—favor composable primitives over layered frameworks.
+
+### Backward Compatibility
+
+New bytecode ops require version negotiation. Plan semantic versioning and feature detection to ensure old schemas still run.
+
+### Compiler Maintenance
+
+Additional passes and metadata raise complexity. Keep transformations incremental and reuse existing schema-root machinery.
+
+---
+
+## Summary
+
+This roadmap keeps the Light-FP philosophy intact—**types-first schemas, pure domain logic, and Result-based error reporting**—while progressively widening the runtime from a validation VM into a broader functional toolkit.
+
+**For currently implemented features, see [FEATURES.md](FEATURES.md)**

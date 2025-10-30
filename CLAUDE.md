@@ -7,7 +7,15 @@ code in this repository.
 
 This is a **Light-FP TypeScript compiler** prototype that enforces a minimal
 functional programming subset and compiles `typeOf<T>()` calls into
-Deepkit-compatible bytecode literals. The compiler performs three passes:
+Deepkit-compatible bytecode literals.
+
+**Documentation:**
+- [FEATURES.md](docs/FEATURES.md) - Currently implemented features
+- [FUTURE_DIRECTION.md](docs/FUTURE_DIRECTION.md) - Planned features and roadmap
+- [LANG-SPEC.md](docs/LANG-SPEC.md) - Light-FP language specification
+- [BYTECODE_REFERENCE.md](docs/BYTECODE_REFERENCE.md) - Bytecode format and opcodes
+
+The compiler performs three passes:
 
 1. **Gate pass** - Rejects disallowed syntax (OOP constructs, decorators,
    mapped/conditional types)
