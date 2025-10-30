@@ -129,7 +129,99 @@ const result = InspectedOrderSchema.validate(payload);
 
 ---
 
-### 3. Pipeline Composition Shim (v0.4.0)
+### 3. Effect Handling with AsyncResult (v0.5.0)
+
+**Status:** ✅ Fully implemented (Phases 1-3)
+
+Direct-style effect handling for `Promise<Result<T, E>>` operations using AsyncResult helpers, port validation, and compiler warnings.
+
+**Philosophy:** "Effects are just async functions that can fail" - uses standard async/await with Result types, no monads needed.
+
+**AsyncResult API:**
+
+- `AsyncResult.try(fn, onError)` - Wrap async operations that may throw
+- `AsyncResult.andThen(promise, fn)` - Chain async Result operations
+- `AsyncResult.map(promise, fn)` - Transform success values
+- `AsyncResult.mapErr(promise, fn)` - Transform error values
+- `AsyncResult.all(promises)` - Parallel execution with fail-fast
+- `AsyncResult.allSettled(promises)` - Parallel execution, collect all results
+- `AsyncResult.race(promises)` - Race multiple async operations
+
+**Example:**
+
+```ts
+import { AsyncResult, Result } from "lfts-runtime";
+
+// Wrap exception-throwing async code
+const result = await AsyncResult.try(
+  async () => await fetch(url).then(r => r.json()),
+  (err) => `Network error: ${err}`
+);
+
+// Chain async operations
+const userWithPosts = await AsyncResult.andThen(
+  loadUser(userId),
+  (user) => loadPosts(user.id)
+);
+
+// Parallel loading
+const dashboard = await AsyncResult.all([
+  loadUser(userId),
+  loadPosts(userId),
+  loadComments(userId),
+]);
+```
+
+**Port Validation (Optional):**
+
+Runtime validation of port/capability implementations for dependency injection and plugin systems.
+
+- `validatePort<T>(portSchema, impl)` - Validate implementation matches port contract
+- `getPortName(portSchema)` - Extract port name from schema
+- `getPortMethods(portSchema)` - Extract method names from schema
+- Added `Op.PORT`, `Op.PORT_METHOD`, `Op.EFFECT` bytecode opcodes
+- Port schemas via `enc.port(name, methods)`
+
+**Example:**
+
+```ts
+import { validatePort, enc } from "lfts-runtime";
+
+// Define port schema
+const StoragePort$ = enc.port("StoragePort", [
+  { name: "load", params: [enc.str()], returnType: enc.obj([]) },
+  { name: "save", params: [enc.str(), enc.obj([])], returnType: enc.obj([]) },
+]);
+
+// Validate implementation
+const validation = validatePort<StoragePort>(StoragePort$, memoryStorage);
+if (validation.ok) {
+  const storage = validation.value; // Type-safe!
+}
+```
+
+**Compiler Warnings (LFP1030):**
+
+The compiler provides helpful warnings when it detects manual Promise<Result> handling that could be simplified:
+
+- Warns on try/catch with Result.err → Suggests `AsyncResult.try()`
+- Warns on manual .then() chaining → Suggests `AsyncResult.andThen()`/`map()`
+- Warns on Promise<Result> functions with manual handling
+
+**Testing:**
+
+- 26 AsyncResult tests in `packages/lfts-type-runtime/async-result.test.ts`
+- 28 port validation tests in `packages/lfts-type-runtime/port-validation.test.ts`
+- Compiler warning test: `warn_suggest_async_result` golden test
+- Example usage:
+  - `packages/lfts-type-runtime/async-result-example.ts` (10 examples)
+  - `packages/lfts-type-runtime/port-validation-example.ts` (8 examples)
+
+**Documentation:** See [EFFECTS_GUIDE.md](EFFECTS_GUIDE.md) for comprehensive guide with patterns and best practices.
+
+---
+
+### 4. Pipeline Composition Shim (v0.4.0)
 
 **Status:** ✅ Fully implemented
 

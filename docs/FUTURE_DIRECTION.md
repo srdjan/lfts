@@ -58,86 +58,40 @@ const result = rawUser
 
 ---
 
-## Phase 2: Effect Awareness & Contract Safety
+## Phase 2: Effect Handling (v0.5.0)
 
-**Priority:** Medium effort
+**Status:** ✅ Implemented with direct-style approach
 
-### Capability/Port Contract Validation
+Instead of monadic Effect types or explicit effect tracking, LFTS adopted a **direct-style** approach using `Promise<Result<T, E>>` with AsyncResult helpers and port validation.
 
-- **Pillars:** Honors types-first by validating port interfaces; enforces
-  errors-as-values via structured capability diagnostics; pure core maintained
-  if effects stay outside domain
-- **Compiler:** Gate bans dynamic method creation on ports; policy enforces
-  explicit `PortSchema` exports; transform emits `Op.PORT` describing method
-  signatures and Result envelopes
-- **Bytecode:** Add `Op.PORT`, `Op.METHOD`, `Op.EFFECT_TAG`
-- **Compatibility:** Ports optional; data-only projects unaffected
+**Implemented features:**
 
-#### Before / After
+1. **AsyncResult Helpers** - Composition utilities for `Promise<Result>` operations
+   - `AsyncResult.try()`, `andThen()`, `map()`, `mapErr()`, `all()`, `allSettled()`, `race()`
+   - Direct style: uses standard async/await, no monads
 
-**Before**
+2. **Port Validation** - Runtime contract verification for ports/capabilities
+   - `validatePort<T>(portSchema, impl)` - Structural validation
+   - Added `Op.PORT`, `Op.PORT_METHOD`, `Op.EFFECT` opcodes
+   - Port schemas via `enc.port(name, methods)`
 
-```ts
-type NotificationPort = {
-  sendEmail(input: EmailInput): Promise<Result<void>>;
-};
+3. **Compiler Warnings (LFP1030)** - Helpful guidance for best practices
+   - Suggests AsyncResult helpers for manual Promise<Result> handling
+   - Non-blocking warnings, not errors
 
-const ensureNotificationPort = (port: unknown): Result<NotificationPort> => {
-  const candidate = port as Partial<NotificationPort>;
-  if (!candidate || typeof candidate.sendEmail !== "function") {
-    return Result.err({ capability: "sendEmail", reason: "missing" }); // ad-hoc contract check
-  }
-  return Result.ok(candidate as NotificationPort);
-};
-```
+**See [EFFECTS_GUIDE.md](EFFECTS_GUIDE.md) and [FEATURES.md](FEATURES.md#3-effect-handling-with-asyncresult-v050) for complete documentation.**
 
-**After**
+### Future: Advanced Effect Features (Deferred)
 
-```ts
-const NotificationPortSchema = PortSchema.define({
-  sendEmail: capabilityOf(emailCapabilitySchema), // declare method signature + Result envelope
-});
+The following advanced effect features are **not planned** for the current roadmap, as the direct-style approach with AsyncResult meets practical needs:
 
-const ensureNotificationPort = NotificationPortSchema.validate; // returns Result<NotificationPort>
+- **Effect Tracking Runtime** - Explicit effect provenance and logging
+- **Effect Type System** - Monadic Effect<R, E, A> types
+- **Algebraic Effects** - Effect handlers and resumable computations
 
-ensureNotificationPort(port); // runtime emits structured capability diagnostics
-```
+These features add significant complexity and are better suited for specialized effect systems like ZIO or Effekt. LFTS prioritizes simplicity with direct-style async/await + Result.
 
-### Effect Tracking Runtime (IO, State)
-
-- **Pillars:** Extends pure core by explicitly labeling effects rather than
-  hiding them; types-first via effect schemas; Result channel carries effect
-  logs
-- **Compiler:** New policy ensuring effect-producing functions return
-  `Effect<Result>`; transform expands `effectOf<T>()` to bytecode
-- **Bytecode:** Introduce `Op.EFFECT`, `Op.EFFECT_SEQ`, `Op.EFFECT_PAR`
-- **Compatibility:** Needs versioned bytecode; older runtime ignores unknown
-  opcodes → require minor version bump
-
-#### Before / After
-
-**Before**
-
-```ts
-const persistInvoice = async (
-  invoice: Invoice,
-): Promise<Result<PersistedInvoice>> => {
-  const result = await saveInvoice(invoice);
-  effectLog.push({ tag: "db.save", payload: invoice }); // developers manage effect logs manually
-  return result; // Result payload carries no provenance
-};
-```
-
-**After**
-
-```ts
-const persistInvoice = effectOf<Invoice, PersistedInvoice>(
-  "db.save",
-  (ctx, invoice) => ctx.perform(saveInvoice, invoice), // runtime records IO + arguments atomically
-); // produces Effect<Result<PersistedInvoice>>
-
-persistInvoice.run(invoice).toResult(); // unwrap Result plus effect log metadata
-```
+---
 
 ### Memoization & Lazy Evaluation
 

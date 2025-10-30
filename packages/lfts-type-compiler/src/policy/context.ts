@@ -100,6 +100,7 @@ import { typeOnlyImportsRule } from "./rules/type-only-imports.ts";
 import { noAsAssertionsInSchemaFilesRule } from "./rules/no-as-assertions-in-schema-files.ts";
 import { noImperativeBranchingRule } from "./rules/no-imperative-branching.ts";
 import { noBitwiseExceptPipelineRule } from "./rules/no-bitwise-except-pipeline.ts";
+import { suggestAsyncResultRule } from "./rules/suggest-async-result.ts";
 
 rules.push(
   portInterfaceRule,
@@ -118,6 +119,7 @@ rules.push(
   noAsAssertionsInSchemaFilesRule,
   noImperativeBranchingRule, // Phase 1.1: Result/Option combinators
   noBitwiseExceptPipelineRule,
+  suggestAsyncResultRule, // Phase 2: AsyncResult helpers
 );
 
 // schema helpers

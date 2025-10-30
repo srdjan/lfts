@@ -11,6 +11,7 @@ Deepkit-compatible bytecode literals.
 
 **Documentation:**
 - [FEATURES.md](docs/FEATURES.md) - Currently implemented features
+- [EFFECTS_GUIDE.md](docs/EFFECTS_GUIDE.md) - Effect handling with ports and AsyncResult
 - [FUTURE_DIRECTION.md](docs/FUTURE_DIRECTION.md) - Planned features and roadmap
 - [LANG-SPEC.md](docs/LANG-SPEC.md) - Light-FP language specification
 - [BYTECODE_REFERENCE.md](docs/BYTECODE_REFERENCE.md) - Bytecode format and opcodes

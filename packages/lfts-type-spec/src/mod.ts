@@ -38,6 +38,10 @@ export enum Op {
   OPTION_NONE,
   // introspection metadata (Phase 1.2)
   METADATA,
+  // effect types and ports (Phase 2)
+  EFFECT,
+  PORT,
+  PORT_METHOD,
 }
 
 export type Bytecode = any[]; // nested tuples/arrays
@@ -118,4 +122,26 @@ export const enc = {
     schema: Bytecode,
     meta: { name?: string; source?: string },
   ): Bytecode => [Op.METADATA, meta, schema],
+
+  // effect types and ports (Phase 2)
+  effect: (
+    effectType: string,
+    returnType: Bytecode,
+  ): Bytecode => [Op.EFFECT, effectType, returnType],
+
+  port: (
+    portName: string,
+    methods: { name: string; params: Bytecode[]; returnType: Bytecode }[],
+  ): Bytecode => [
+    Op.PORT,
+    portName,
+    methods.length,
+    ...methods.flatMap((m) => [
+      Op.PORT_METHOD,
+      m.name,
+      m.params.length,
+      ...m.params,
+      m.returnType,
+    ]),
+  ],
 };

@@ -1,13 +1,15 @@
 import {
+  AsyncResult,
   match,
-  type Result,
   validate,
   validateSafe,
-  type ValidationError,
 } from "../../packages/lfts-type-runtime/mod.ts";
+import type { Result, ValidationError } from "../../packages/lfts-type-runtime/mod.ts";
 import { systemClock } from "./ports/clock.ts";
 import { denoConsole } from "./ports/console.ts";
 import { fileStorage } from "./ports/storage.ts";
+import type { LoadError, SaveError } from "./ports/storage.ts";
+import { concatenateChunks, decodeText } from "./util.ts";
 import type { ClockPort } from "./ports/clock.ts";
 import type { ConsolePort } from "./ports/console.ts";
 import type { StoragePort } from "./ports/storage.ts";
@@ -21,8 +23,12 @@ import type { Command } from "./domain/commands.ts";
 import "./domain/commands.schema.ts";
 declare const Command$: any[];
 
-/** In-memory store */
-export type Store = Readonly<{ tasks: Map<string, Task> }>;
+/** In-memory store using Record instead of Map (Light-FP style) */
+export type Store = Readonly<{ tasks: Readonly<Record<string, Task>> }>;
+
+function createEmptyStore(): Store {
+  return { tasks: {} };
+}
 
 function newId(clock: ClockPort): TaskId {
   const id = `t_${clock.now()}`;
@@ -30,25 +36,70 @@ function newId(clock: ClockPort): TaskId {
 }
 
 function toTaskList(store: Store): { tasks: readonly Task[] } {
-  return { tasks: Array.from(store.tasks.values()) };
+  return { tasks: Object.values(store.tasks) };
 }
 
 function fromTaskList(obj: unknown): Store {
   const list = validate(TaskList$, obj);
-  const m = new Map<string, Task>();
-  for (const t of list.tasks) m.set(t.id, t);
-  return { tasks: m };
+  const tasks: Record<string, Task> = {};
+  for (const t of list.tasks) {
+    tasks[t.id] = t;
+  }
+  return { tasks };
 }
 
-export function handleCommand(
+/** Helper to persist store to storage */
+async function persistStore(
+  store: Store,
+  storage: StoragePort,
+  io: ConsolePort,
+): Promise<void> {
+  const json = JSON.stringify(
+    validate(TaskList$, toTaskList(store)),
+    null,
+    2,
+  );
+  const result = await storage.save(json);
+  if (!result.ok) {
+    io.log(`Warning: failed to persist tasks to storage: ${result.error}`);
+  }
+}
+
+/** Helper to load store from storage */
+async function loadStore(
+  storage: StoragePort,
+  io: ConsolePort,
+): Promise<Store> {
+  const result = await storage.load();
+  if (!result.ok) {
+    if (result.error === "not_found") {
+      return createEmptyStore();
+    }
+    io.log(`Warning: failed to load tasks: ${result.error}`);
+    return createEmptyStore();
+  }
+
+  if (result.value === "") {
+    return createEmptyStore();
+  }
+
+  try {
+    return fromTaskList(JSON.parse(result.value));
+  } catch (err) {
+    io.log(`Warning: failed to parse tasks: ${err instanceof Error ? err.message : String(err)}`);
+    return createEmptyStore();
+  }
+}
+
+export async function handleCommand(
   store: Store,
   clock: ClockPort,
   io: ConsolePort,
   storage: StoragePort,
   cmd: Command,
-): Store {
+): Promise<Store> {
   return match(cmd, {
-    add: (c) => {
+    add: async (c) => {
       const id = newId(clock);
       const t: Task = {
         id,
@@ -56,49 +107,35 @@ export function handleCommand(
         createdAt: clock.now(),
         completed: false,
       };
-      const next = new Map(store.tasks);
-      next.set(id, validate(Task$, t));
+      const newStore: Store = {
+        tasks: { ...store.tasks, [id]: validate(Task$, t) },
+      };
       io.log(`added: ${id} ${t.name}`);
-      const saved = storage.save(
-        JSON.stringify(
-          validate(TaskList$, toTaskList({ tasks: next })),
-          null,
-          2,
-        ),
-      );
-      if (!saved) {
-        io.log("Warning: failed to persist tasks to storage");
-      }
-      return { tasks: next };
+
+      await persistStore(newStore, storage, io);
+      return newStore;
     },
     list: () => {
-      const list = Array.from(store.tasks.values());
+      const list = Object.values(store.tasks);
       validate(TaskList$, { tasks: list });
       for (const t of list) {
         io.log(`${t.completed ? "✓" : "·"} ${t.id}  ${t.name}`);
       }
       return store;
     },
-    complete: (c) => {
-      const t = store.tasks.get(c.id);
+    complete: async (c) => {
+      const t = store.tasks[c.id];
       if (!t) {
         io.log(`not found: ${c.id}`);
         return store;
       }
-      const next = new Map(store.tasks);
-      next.set(c.id, { ...t, completed: true });
+      const newStore: Store = {
+        tasks: { ...store.tasks, [c.id]: { ...t, completed: true } },
+      };
       io.log(`completed: ${c.id}`);
-      const saved = storage.save(
-        JSON.stringify(
-          validate(TaskList$, toTaskList({ tasks: next })),
-          null,
-          2,
-        ),
-      );
-      if (!saved) {
-        io.log("Warning: failed to persist tasks to storage");
-      }
-      return { tasks: next };
+
+      await persistStore(newStore, storage, io);
+      return newStore;
     },
     help: () => {
       io.log([
@@ -144,8 +181,22 @@ async function readJsonFromStdin(
   io: ConsolePort,
 ): Promise<Command | undefined> {
   try {
-    const buf = await Deno.readAll(Deno.stdin);
-    const text = new TextDecoder().decode(buf).trim();
+    // Read from stdin using modern Deno streams API
+    const reader = Deno.stdin.readable.getReader();
+    const chunks: Uint8Array[] = [];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+    reader.releaseLock();
+
+    if (chunks.length === 0) return undefined;
+
+    // Concatenate chunks
+    const buf = concatenateChunks(chunks);
+    const text = decodeText(buf).trim();
     if (text.length === 0) return undefined;
 
     const obj = JSON.parse(text);
@@ -174,12 +225,9 @@ if (import.meta.main) {
   const storage = fileStorage("./tasks.json");
 
   // Load persisted state
-  const loaded = storage.load();
-  let store: Store = loaded
-    ? fromTaskList(JSON.parse(loaded))
-    : { tasks: new Map() };
+  let store = await loadStore(storage, io);
 
   const piped = await readJsonFromStdin(io);
   const cmd = piped ?? parseArgs(Deno.args);
-  store = handleCommand(store, clock, io, storage, cmd);
+  store = await handleCommand(store, clock, io, storage, cmd);
 }

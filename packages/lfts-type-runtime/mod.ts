@@ -1625,6 +1625,158 @@ export const Option = {
   },
 };
 
+/**
+ * AsyncResult combinator namespace for effectful operations.
+ * Provides ergonomic helpers for composing Promise<Result<T, E>> operations
+ * commonly used with ports/capabilities that perform I/O or other effects.
+ *
+ * Philosophy: Effects are just async functions that can fail.
+ * Use standard async/await with Result types for error handling.
+ */
+export const AsyncResult = {
+  /**
+   * Wrap an async operation that may throw into Promise<Result<T, E>>.
+   * Converts exceptions into Result.err values.
+   *
+   * Example:
+   *   const result = await AsyncResult.try(
+   *     async () => await fetch(url).then(r => r.json()),
+   *     (err) => `Network error: ${err}`
+   *   );
+   */
+  try<T, E>(
+    fn: () => Promise<T>,
+    onError: (error: unknown) => E,
+  ): Promise<Result<T, E>> {
+    return fn()
+      .then((value) => Result.ok<T, E>(value))
+      .catch((error) => Result.err<T, E>(onError(error)));
+  },
+
+  /**
+   * Chain async Result-returning functions together.
+   * Short-circuits on the first error.
+   *
+   * Example:
+   *   const result = await AsyncResult.andThen(
+   *     loadUser(id),
+   *     (user) => loadPosts(user.id)
+   *   );
+   */
+  async andThen<T, U, E>(
+    promise: Promise<Result<T, E>>,
+    fn: (value: T) => Promise<Result<U, E>>,
+  ): Promise<Result<U, E>> {
+    const result = await promise;
+    return result.ok ? fn(result.value) : result;
+  },
+
+  /**
+   * Transform the success value inside an async Result.
+   * If the Result is an error, returns the error unchanged.
+   *
+   * Example:
+   *   const result = await AsyncResult.map(
+   *     loadUser(id),
+   *     (user) => user.name
+   *   );
+   */
+  async map<T, U, E>(
+    promise: Promise<Result<T, E>>,
+    fn: (value: T) => U,
+  ): Promise<Result<U, E>> {
+    const result = await promise;
+    return result.ok ? Result.ok(fn(result.value)) : result;
+  },
+
+  /**
+   * Transform the error value inside an async Result.
+   * If the Result is successful, returns it unchanged.
+   *
+   * Example:
+   *   const result = await AsyncResult.mapErr(
+   *     loadUser(id),
+   *     (err) => `Failed to load user: ${err}`
+   *   );
+   */
+  async mapErr<T, E, F>(
+    promise: Promise<Result<T, E>>,
+    fn: (error: E) => F,
+  ): Promise<Result<T, F>> {
+    const result = await promise;
+    return result.ok ? result : Result.err(fn(result.error));
+  },
+
+  /**
+   * Run multiple async Results in parallel. Fail-fast on first error.
+   * Returns array of success values if all succeed.
+   *
+   * Example:
+   *   const result = await AsyncResult.all([
+   *     loadUser(id1),
+   *     loadUser(id2),
+   *     loadUser(id3),
+   *   ]);
+   *   // result: Result<[User, User, User], LoadError>
+   */
+  async all<T, E>(
+    promises: readonly Promise<Result<T, E>>[],
+  ): Promise<Result<readonly T[], E>> {
+    const results = await Promise.all(promises);
+    const values: T[] = [];
+    for (const result of results) {
+      if (!result.ok) return result;
+      values.push(result.value);
+    }
+    return Result.ok(values);
+  },
+
+  /**
+   * Run multiple async Results in parallel. Wait for all to complete.
+   * Returns separate arrays of successes and failures.
+   *
+   * Example:
+   *   const result = await AsyncResult.allSettled([
+   *     loadUser(id1),
+   *     loadUser(id2),
+   *     loadUser(id3),
+   *   ]);
+   *   // result: { successes: User[], failures: LoadError[] }
+   */
+  async allSettled<T, E>(
+    promises: readonly Promise<Result<T, E>>[],
+  ): Promise<{ successes: readonly T[]; failures: readonly E[] }> {
+    const results = await Promise.all(promises);
+    const successes: T[] = [];
+    const failures: E[] = [];
+    for (const result of results) {
+      if (result.ok) {
+        successes.push(result.value);
+      } else {
+        failures.push(result.error);
+      }
+    }
+    return { successes, failures };
+  },
+
+  /**
+   * Race multiple async Results. Return the first one that completes.
+   * If the first completion is an error, that error is returned.
+   *
+   * Example:
+   *   const result = await AsyncResult.race([
+   *     loadFromCache(key),
+   *     loadFromDatabase(key),
+   *     loadFromAPI(key),
+   *   ]);
+   */
+  async race<T, E>(
+    promises: readonly Promise<Result<T, E>>[],
+  ): Promise<Result<T, E>> {
+    return await Promise.race(promises);
+  },
+};
+
 // ============================================================================
 // Pipeline Helpers (pre-TC39 |> bridge)
 // ============================================================================
@@ -2344,4 +2496,203 @@ export function withMetadata(
   metadata: SchemaMetadata,
 ): TypeObject {
   return [Op.METADATA, metadata, schema];
+}
+
+// ============================================================================
+// Port Validation (Phase 2)
+// ============================================================================
+
+/**
+ * Port validation error type.
+ */
+export type PortValidationError =
+  | { readonly type: "not_object"; readonly message: string }
+  | {
+    readonly type: "missing_method";
+    readonly methodName: string;
+    readonly message: string;
+  }
+  | {
+    readonly type: "wrong_type";
+    readonly methodName: string;
+    readonly message: string;
+  }
+  | {
+    readonly type: "wrong_arity";
+    readonly methodName: string;
+    readonly expected: number;
+    readonly actual: number;
+    readonly message: string;
+  };
+
+/**
+ * Validate that an implementation conforms to a port interface schema.
+ *
+ * This function checks that:
+ * 1. The implementation is an object
+ * 2. All required methods exist
+ * 3. All methods are functions
+ * 4. All methods have the correct arity (parameter count)
+ *
+ * Note: This performs structural validation only. It does NOT validate:
+ * - Parameter types (runtime type checking is expensive and often impractical)
+ * - Return types (would require calling the function)
+ * - Method behavior/correctness
+ *
+ * For full type safety, rely on TypeScript's compile-time checking.
+ * Use this function for runtime contract verification (e.g., plugin systems,
+ * dependency injection containers, testing).
+ *
+ * @param portSchema - The bytecode schema for the port (Op.PORT)
+ * @param impl - The implementation to validate
+ * @returns Result with the validated implementation or an error
+ *
+ * @example
+ * ```ts
+ * interface StoragePort {
+ *   load(key: string): Promise<Result<Data, Error>>;
+ *   save(key: string, data: Data): Promise<Result<void, Error>>;
+ * }
+ *
+ * // Port schema generated by compiler (or manual)
+ * const StoragePort$ = enc.port("StoragePort", [
+ *   { name: "load", params: [enc.str()], returnType: enc.obj([]) },
+ *   { name: "save", params: [enc.str(), enc.obj([])], returnType: enc.obj([]) }
+ * ]);
+ *
+ * const impl = {
+ *   load: async (key: string) => { ... },
+ *   save: async (key: string, data: Data) => { ... }
+ * };
+ *
+ * const result = validatePort(StoragePort$, impl);
+ * if (result.ok) {
+ *   // Use impl with confidence
+ *   const storage: StoragePort = result.value;
+ * }
+ * ```
+ */
+export function validatePort<T>(
+  portSchema: TypeObject,
+  impl: unknown,
+): Result<T, PortValidationError> {
+  // Ensure schema is a PORT opcode
+  if (!isBC(portSchema) || portSchema[0] !== Op.PORT) {
+    return Result.err({
+      type: "not_object",
+      message: "Schema is not a PORT bytecode",
+    });
+  }
+
+  // Check that impl is an object
+  if (typeof impl !== "object" || impl === null) {
+    return Result.err({
+      type: "not_object",
+      message: `Expected object, got ${typeof impl}`,
+    });
+  }
+
+  const portName = portSchema[1] as string;
+  const methodCount = portSchema[2] as number;
+
+  // Parse method definitions from bytecode
+  // Format: [Op.PORT, name, count, Op.PORT_METHOD, name1, paramCount1, ...params1, return1, ...]
+  let offset = 3;
+  for (let i = 0; i < methodCount; i++) {
+    if (portSchema[offset] !== Op.PORT_METHOD) {
+      return Result.err({
+        type: "not_object",
+        message: `Invalid PORT bytecode: expected PORT_METHOD at offset ${offset}`,
+      });
+    }
+
+    const methodName = portSchema[offset + 1] as string;
+    const paramCount = portSchema[offset + 2] as number;
+
+    // Check if method exists on impl
+    const method = (impl as any)[methodName];
+    if (method === undefined) {
+      return Result.err({
+        type: "missing_method",
+        methodName,
+        message: `Port ${portName} requires method '${methodName}', but it is missing`,
+      });
+    }
+
+    // Check if method is a function
+    if (typeof method !== "function") {
+      return Result.err({
+        type: "wrong_type",
+        methodName,
+        message:
+          `Port ${portName} method '${methodName}' must be a function, got ${typeof method}`,
+      });
+    }
+
+    // Check arity (parameter count)
+    // Note: JavaScript function.length gives the number of named parameters
+    // This won't catch rest parameters or optional parameters correctly,
+    // but it's a reasonable structural check
+    if (method.length !== paramCount) {
+      return Result.err({
+        type: "wrong_arity",
+        methodName,
+        expected: paramCount,
+        actual: method.length,
+        message:
+          `Port ${portName} method '${methodName}' expects ${paramCount} parameter(s), but implementation has ${method.length}`,
+      });
+    }
+
+    // Move offset past this method definition
+    // PORT_METHOD + name + paramCount + params + returnType
+    offset += 3 + paramCount + 1;
+  }
+
+  // All checks passed
+  return Result.ok(impl as T);
+}
+
+/**
+ * Extract port name from a PORT bytecode schema.
+ * Useful for error messages and debugging.
+ *
+ * @param portSchema - The PORT bytecode schema
+ * @returns The port name, or undefined if not a valid PORT schema
+ */
+export function getPortName(portSchema: TypeObject): string | undefined {
+  if (!isBC(portSchema) || portSchema[0] !== Op.PORT) {
+    return undefined;
+  }
+  return portSchema[1] as string;
+}
+
+/**
+ * Extract method names from a PORT bytecode schema.
+ * Useful for introspection and debugging.
+ *
+ * @param portSchema - The PORT bytecode schema
+ * @returns Array of method names, or empty array if not a valid PORT schema
+ */
+export function getPortMethods(portSchema: TypeObject): string[] {
+  if (!isBC(portSchema) || portSchema[0] !== Op.PORT) {
+    return [];
+  }
+
+  const methodCount = portSchema[2] as number;
+  const methods: string[] = [];
+
+  let offset = 3;
+  for (let i = 0; i < methodCount; i++) {
+    if (portSchema[offset] !== Op.PORT_METHOD) break;
+
+    const methodName = portSchema[offset + 1] as string;
+    const paramCount = portSchema[offset + 2] as number;
+    methods.push(methodName);
+
+    // Move to next method
+    offset += 3 + paramCount + 1;
+  }
+
+  return methods;
 }

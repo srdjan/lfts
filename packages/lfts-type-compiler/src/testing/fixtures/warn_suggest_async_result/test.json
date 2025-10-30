@@ -1,0 +1,7 @@
+{
+  "expected": [
+    { "id": "LFP1030", "message": "Consider using AsyncResult.try()" },
+    { "id": "LFP1030", "message": "Consider using AsyncResult" },
+    { "id": "LFP1030", "message": "Consider using AsyncResult helpers" }
+  ]
+}
