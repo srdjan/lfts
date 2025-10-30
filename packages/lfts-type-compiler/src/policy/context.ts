@@ -99,6 +99,7 @@ import { portMethodSignaturesOnlyRule } from "./rules/port-method-signatures-onl
 import { typeOnlyImportsRule } from "./rules/type-only-imports.ts";
 import { noAsAssertionsInSchemaFilesRule } from "./rules/no-as-assertions-in-schema-files.ts";
 import { noImperativeBranchingRule } from "./rules/no-imperative-branching.ts";
+import { noBitwiseExceptPipelineRule } from "./rules/no-bitwise-except-pipeline.ts";
 
 rules.push(
   portInterfaceRule,
@@ -116,6 +117,7 @@ rules.push(
   typeOnlyImportsRule,
   noAsAssertionsInSchemaFilesRule,
   noImperativeBranchingRule, // Phase 1.1: Result/Option combinators
+  noBitwiseExceptPipelineRule,
 );
 
 // schema helpers
