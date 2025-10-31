@@ -1,12 +1,14 @@
-# Standalone Validator — Known Gaps (v0.2.0)
+# Standalone Validator — Known Gaps (v0.4.x)
 
-This lists the **known missing features** in the built-in validator compared to a production-ready schema runtime.
+This document tracks the remaining gaps in the built-in validator relative to a production-ready runtime. It reflects the current Deno runtime shipped with LFTS v0.4.x.
 
-**Recent improvements (v0.2.0)**:
-- ✅ DUNION discriminated union fast-path with O(1) tag lookup (40x-1600x speedup)
-- ✅ Lazy path construction (eliminates string concat overhead on happy path)
-- ✅ UNION Result-based validation (2-5x speedup, eliminates try/catch overhead)
-- ✅ Excess-property policy (optional strict mode for objects)
+**Recent improvements**
+- ✅ **Refinements**: numeric min/max/integer/range, string length/pattern/email/url, array min/max items.
+- ✅ **Error aggregation**: `validateAll()` collects multiple failures (configurable cap).
+- ✅ **Strict objects**: optional excess-property policy on `enc.obj([...], true)`.
+- ✅ **DUNION fast path**: O(1) discriminant lookup with WeakMap cache.
+- ✅ **Union optimisations**: result-based validation eliminates throw/catch overhead.
+- ✅ **Lazy paths**: only build dotted paths when needed.
 
 ## Type surface & semantics
 - **No recursive/self-referential types** (e.g., trees, graphs).
@@ -16,26 +18,25 @@ This lists the **known missing features** in the built-in validator compared to 
 - **No tuple optional/rest elements** (only fixed-length tuples).
 - **No function types in schemas** (by design; rejected by policy, not supported in runtime).
 - **No `bigint`, `symbol`, `Date`, `Buffer`, or branded-special primitives** beyond `string/number/boolean/null/undefined/literal`.
+- **Readonly** is shallow: runtime treats `READONLY` as pass-through (compile-time only).
 
 ## Validation constraints & refinements
-- **No numeric refinements**: min/max, integer-only, exclusive bounds, multiples.
-- **No string refinements**: min/max length, regex patterns, specific formats (email/uuid/url).
-- **No array refinements**: min/max items, uniqueItems, item-by-index rules.
-- **Limited object refinements**: required-vs-optional is supported, **excess-property policy is supported** (✅ v0.2.0 - optional strict mode), but **no dependency/oneOf/allOf** style constraints.
-- **No deep `readonly` enforcement** at runtime (compile-time only).
-- **No brand-carrying runtime checks** beyond wrapping the inner type.
+- ✅ Numeric refinements: `Op.REFINE_MIN`, `Op.REFINE_MAX`, `Op.REFINE_INTEGER`, `Op.REFINE_PATTERN` (range via min/max nesting).
+- ✅ String refinements: min/max length, regex pattern, email, URL.
+- ✅ Array refinements: min/max items.
+- ❌ Missing refinements: exclusivity (`>`, `<`), multiples, string format families (UUID, ISO dates), array uniqueness and per-index rules.
+- ❌ No composite constraints (`oneOf`, `allOf`, property dependencies).
+- ❌ No brand-aware runtime checks beyond structural `Op.BRAND`.
 
 ## Error reporting
-- **First-failure only**: we stop on the first error; no aggregation of multiple errors.
-- **Union messages** are generic (“no union alternative matched”) without best-match hints.
-- **Path is included**, but **no schema source mapping** (e.g., pointing to exact `typeOf<T>()` property node).
+- ✅ `validateAll()` aggregates errors with configurable `maxErrors`.
+- **Union diagnostics** remain generic (“no union alternative matched”) without nearest-match hints.
+- **Paths** include array indices and property names, but **no schema source mapping** (no link back to original `typeOf<T>()` location).
 
 ## Performance & ergonomics
-- **Limited memoization**: DUNION tag maps are WeakMap-cached (✅ v0.2.0), but general sub-schema memoization not yet implemented.
-- **Optimized dispatch**: DUNION uses O(1) tag lookup (✅ v0.2.0), UNION uses Result-based validation (✅ v0.2.0 - eliminates try/catch overhead).
-- **No stable schema hash** for caching / versioning / compatibility checks.
-- **No JSON Schema export** and **no serializer specialization** (serialize = validate + identity).
-- **No plugin hooks** for custom validators/refinements.
+- **Memoization**: DUNION tag maps + BRAND/READONLY wrapper caches exist, but there is no general sub-schema cache or hash-based lookup.
+- **Schema identity**: No stable schema hash for memoised validation/serialization or compatibility checks.
+- **Interop**: No JSON Schema export, no serializer specialisation, no plugin hook architecture.
 
 ## Interop & tooling
 - **No schema registry** or cross-module sharing contract (we inline bytecode at call sites).
@@ -46,22 +47,25 @@ This lists the **known missing features** in the built-in validator compared to 
 ## Suggested next steps
 
 ### High Priority
-1. **Error aggregation**: Collect multiple failures with a limit and clear formatting (only remaining high-priority item).
+1. **Discriminated union diagnostics**: Provide “best alternative” hints when unions fail.
+2. **Source mapping**: Emit minimal spans from bytecode back to `typeOf<T>()` properties.
+3. **Schema identity**: stable hash / memo cache for repeat validations.
 
 ### Medium Priority
-2. **General schema memoization**: Hash-based cache for sub-schemas beyond DUNION (10-20% speedup for READONLY/BRAND-heavy schemas).
-3. **Tuple rest/optional**: Extend bytecode and encoder for richer tuples.
-4. **Refinements**: Add minimal `Op.REFINE` with known set (min/max, length, regex).
+4. **Recursive & dictionary types**: Extend bytecode/runtime with cycle detection and index signatures.
+5. **Tuple optional/rest elements**: Add bytecode encoding for variadic tuples.
+6. **Advanced refinements**: unique arrays, exclusive bounds, extended string format helpers.
 
 ### Low Priority
-5. **Stable schema hash**: Enable caching, versioning, compatibility checks.
-6. **Source mapping**: Emit lightweight node-spans from `typeOf<T>()` to properties for better error messages.
-7. **Recursive types**: Support self-referential types (trees, graphs) with cycle detection.
+7. **Plugin hooks**: Allow custom validators/refinements to register with runtime.
+8. **Serializer specialisation**: Generate faster encode/serialize paths.
+9. **JSON Schema / OpenAPI export**: Emit metadata for external tooling.
 
 ### Performance Note
-Current optimizations (v0.2.0) provide significant performance improvements:
-- **DUNION**: 40x-1600x speedup for ADT validation
-- **UNION**: 2-5x speedup with Result-based validation
-- **Lazy paths**: Eliminates string concat overhead on happy path
+Recent optimisations already in place:
+- **DUNION**: 40x–1600x faster ADT validation with cached tag map.
+- **UNION**: 2–5x faster through result-based branching.
+- **Lazy paths**: No string concatenation on the happy path.
+- **Wrapper cache**: BRAND/READONLY nodes reuse inner schemas via WeakMap.
 
-For most use cases, JavaScript runtime performance is now sufficient. Consider WASM only if benchmarks show specific bottlenecks after implementing remaining JavaScript optimizations (#2 above).
+For most use cases the JavaScript implementation is sufficient; consider WASM/FFI specialisation only after closing the medium-priority items above.

@@ -11,7 +11,7 @@ export function typeOfRewriter(program: ts.Program, checker: ts.TypeChecker) {
         node.expression.text === "typeOf" && node.typeArguments?.length === 1
       ) {
         const T = node.typeArguments[0];
-        const bc = encodeType(T);
+        const bc = encodeType(T, checker);
         const arr = factory.createArrayLiteralExpression(
           bc.map((v) =>
             typeof v === "string"

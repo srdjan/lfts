@@ -1,31 +1,31 @@
 // packages/lfts-type-compiler/src/policy/rules/exhaustive-match.ts
 import ts from "npm:typescript";
 import { Rule } from "../context.ts";
-import { formatCodeFrame } from "../../diag.ts";
 
 const TAG = "type";
 
 function getVariantTag(
   variant: ts.Type,
   checker: ts.TypeChecker,
-  usageNode: ts.Node,
+  anchor: ts.Node,
 ): string | null {
   const apparent = checker.getApparentType(variant);
   if (!(apparent.getFlags() & ts.TypeFlags.Object)) return null;
-  const prop = apparent.getProperty(TAG);
+  const prop = checker.getPropertiesOfType(apparent).find((s) =>
+    s.name === TAG
+  );
   if (!prop) return null;
   if (prop.flags & ts.SymbolFlags.Optional) return null;
-  const decl = prop.valueDeclaration ?? usageNode;
+  const decl = prop.valueDeclaration ?? prop.declarations?.[0] ?? anchor;
   const propType = checker.getTypeOfSymbolAtLocation(prop, decl);
-  if (propType.flags & ts.TypeFlags.StringLiteral) {
-    return (propType as ts.StringLiteralType).value;
-  }
-  return null;
+  if (!(propType.flags & ts.TypeFlags.StringLiteral)) return null;
+  return (propType as ts.StringLiteralType).value;
 }
 
 function typeIsADT(
   type: ts.Type,
   checker: ts.TypeChecker,
+  usageNode: ts.Node,
 ): { tags: string[] } | null {
   if (!(type.flags & ts.TypeFlags.Union)) return null;
   const union = type as ts.UnionType;
@@ -33,7 +33,7 @@ function typeIsADT(
   const tags: string[] = [];
   const seen = new Set<string>();
   for (const variant of union.types) {
-    const tag = getVariantTag(variant, checker, variant.symbol?.valueDeclaration ?? checker.getProgram().getSourceFiles()[0]);
+    const tag = getVariantTag(variant, checker, usageNode);
     if (tag === null) return null;
     if (seen.has(tag)) return null;
     seen.add(tag);
@@ -62,7 +62,7 @@ export const exhaustiveMatchRule: Rule = {
 
     // Type of first arg, look for ADT
     const valueType = ctx.checker.getTypeAtLocation(valueExpr);
-    const adt = typeIsADT(valueType, ctx.checker);
+    const adt = typeIsADT(valueType, ctx.checker, valueExpr);
     if (!adt) return; // not an ADT; ignore
 
     const expected = new Set(adt.tags);

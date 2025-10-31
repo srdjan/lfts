@@ -4,6 +4,8 @@ import { runGate } from "./gate/gate.ts";
 import { runPolicy } from "./policy/engine.ts";
 import { schemaRootRewriter } from "./transform/schema-root-rewriter.ts";
 import { typeOfRewriter } from "./transform/typeOf-rewriter.ts";
+import { EncodingError } from "./transform/type-encoder.ts";
+import { formatCodeFrame } from "./diag.ts";
 
 type Options = { srcDir: string; outDir: string };
 
@@ -59,16 +61,28 @@ export async function compileProject(
   // 4) Emit with proper TypeScript stripping
   const outputFiles = new Map<string, string>();
 
-  const emitResult = program.emit(
-    undefined, // emit all files
-    (fileName, text) => {
-      // Capture output in memory
-      outputFiles.set(fileName, text);
-    },
-    undefined, // no cancellation token
-    false,     // emitOnlyDtsFiles = false
-    transformers,
-  );
+  let emitResult: ts.EmitResult;
+  try {
+    emitResult = program.emit(
+      undefined, // emit all files
+      (fileName, text) => {
+        // Capture output in memory
+        outputFiles.set(fileName, text);
+      },
+      undefined, // no cancellation token
+      false, // emitOnlyDtsFiles = false
+      transformers,
+    );
+  } catch (err) {
+    if (err instanceof EncodingError) {
+      const node = err.node;
+      const sf = node.getSourceFile();
+      const frame = formatCodeFrame(sf, node.getStart(), node.getWidth());
+      console.error(`TransformError: ${err.message}\n${frame}`);
+      return 1;
+    }
+    throw err;
+  }
 
   if (emitResult.diagnostics.length > 0) {
     return printDiagsAndExit("Emit", emitResult.diagnostics);

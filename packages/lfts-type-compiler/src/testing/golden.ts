@@ -63,20 +63,61 @@ Deno.test("golden fixtures", async (t) => {
 });
 
 Deno.test("encodeType emits DUNION for discriminated unions", () => {
+  const fileName = "expr.ts";
   const source = `type Expr =
     | { type: "add"; x: number; y: number }
     | { type: "mul"; x: number; y: number };`;
-  const sf = ts.createSourceFile(
-    "expr.ts",
-    source,
-    ts.ScriptTarget.ES2022,
-    true,
-    ts.ScriptKind.TS,
-  );
+
+  const compilerOptions: ts.CompilerOptions = {
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.ES2022,
+  };
+
+  const baseHost = ts.createCompilerHost(compilerOptions);
+  const originalGetSourceFile = baseHost.getSourceFile.bind(baseHost);
+  const originalReadFile = baseHost.readFile?.bind(baseHost);
+  const originalFileExists = baseHost.fileExists?.bind(baseHost);
+
+  baseHost.getSourceFile = (file, languageVersion, onError, shouldCreateNewSourceFile) => {
+    if (file === fileName) {
+      return ts.createSourceFile(
+        file,
+        source,
+        languageVersion,
+        true,
+        ts.ScriptKind.TS,
+      );
+    }
+    return originalGetSourceFile(
+      file,
+      languageVersion,
+      onError,
+      shouldCreateNewSourceFile,
+    );
+  };
+
+  if (originalReadFile) {
+    baseHost.readFile = (file) => file === fileName ? source : originalReadFile(file);
+  } else {
+    baseHost.readFile = (file) => file === fileName ? source : undefined;
+  }
+
+  if (originalFileExists) {
+    baseHost.fileExists = (file) => file === fileName ? true : originalFileExists(file);
+  } else {
+    baseHost.fileExists = (file) => file === fileName;
+  }
+
+  baseHost.writeFile = () => {};
+
+  const program = ts.createProgram([fileName], compilerOptions, baseHost);
+  const checker = program.getTypeChecker();
+  const sf = program.getSourceFile(fileName);
+  if (!sf) throw new Error("missing source file");
   const alias = sf.statements.find(ts.isTypeAliasDeclaration);
   if (!alias) throw new Error("missing type alias");
 
-  const bc = encodeType(alias.type);
+  const bc = encodeType(alias.type, checker);
 
   assertEquals(bc[0], Op.DUNION, "expected discriminated union opcode");
   assertEquals(bc[1], "type");
