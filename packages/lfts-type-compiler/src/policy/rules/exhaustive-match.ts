@@ -1,43 +1,45 @@
 // packages/lfts-type-compiler/src/policy/rules/exhaustive-match.ts
 import ts from "npm:typescript";
-import { resolveTypeLiteralNode, Rule } from "../context.ts";
+import { Rule } from "../context.ts";
 import { formatCodeFrame } from "../../diag.ts";
 
 const TAG = "type";
 
-function unionIsADT(
-  node: ts.TypeNode,
+function getVariantTag(
+  variant: ts.Type,
+  checker: ts.TypeChecker,
+  usageNode: ts.Node,
+): string | null {
+  const apparent = checker.getApparentType(variant);
+  if (!(apparent.getFlags() & ts.TypeFlags.Object)) return null;
+  const prop = apparent.getProperty(TAG);
+  if (!prop) return null;
+  if (prop.flags & ts.SymbolFlags.Optional) return null;
+  const decl = prop.valueDeclaration ?? usageNode;
+  const propType = checker.getTypeOfSymbolAtLocation(prop, decl);
+  if (propType.flags & ts.TypeFlags.StringLiteral) {
+    return (propType as ts.StringLiteralType).value;
+  }
+  return null;
+}
+
+function typeIsADT(
+  type: ts.Type,
   checker: ts.TypeChecker,
 ): { tags: string[] } | null {
-  if (!ts.isUnionTypeNode(node)) return null;
-  const u = node as ts.UnionTypeNode;
+  if (!(type.flags & ts.TypeFlags.Union)) return null;
+  const union = type as ts.UnionType;
+  if (union.types.length === 0) return null;
   const tags: string[] = [];
-  for (const alt of u.types) {
-    const lit = resolveTypeLiteralNode(alt, checker);
-    if (!lit) return null;
-    let found: string | null = null;
-    for (const m of lit.members) {
-      if (
-        ts.isPropertySignature(m) && m.name && m.type &&
-        ts.isLiteralTypeNode(m.type) && ts.isStringLiteral(m.type.literal)
-      ) {
-        const keyText =
-          (ts.isIdentifier(m.name) || ts.isStringLiteral(m.name) ||
-              ts.isNumericLiteral(m.name))
-            ? (m.name as any).text
-            : undefined;
-        if (keyText === TAG) {
-          found = m.type.literal.text;
-          break;
-        }
-      }
-    }
-    if (!found) return null;
-    tags.push(found);
+  const seen = new Set<string>();
+  for (const variant of union.types) {
+    const tag = getVariantTag(variant, checker, variant.symbol?.valueDeclaration ?? checker.getProgram().getSourceFiles()[0]);
+    if (tag === null) return null;
+    if (seen.has(tag)) return null;
+    seen.add(tag);
+    tags.push(tag);
   }
-  const set = new Set(tags);
-  if (set.size !== tags.length) return null;
-  return { tags: [...set] };
+  return { tags };
 }
 
 export const exhaustiveMatchRule: Rule = {
@@ -60,13 +62,7 @@ export const exhaustiveMatchRule: Rule = {
 
     // Type of first arg, look for ADT
     const valueType = ctx.checker.getTypeAtLocation(valueExpr);
-    const valueTypeNode = ctx.checker.typeToTypeNode(
-      valueType,
-      undefined,
-      ts.NodeBuilderFlags.NoTruncation,
-    );
-    if (!valueTypeNode) return;
-    const adt = unionIsADT(valueTypeNode, ctx.checker);
+    const adt = typeIsADT(valueType, ctx.checker);
     if (!adt) return; // not an ADT; ignore
 
     const expected = new Set(adt.tags);

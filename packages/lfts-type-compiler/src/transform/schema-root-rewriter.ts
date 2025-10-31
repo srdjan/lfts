@@ -27,17 +27,31 @@ export function schemaRootRewriter(
           if (!name.endsWith("Schema")) continue;
           const baseName = name.substring(0, name.length - "Schema".length);
           const T = stmt.type;
-          const bc = encodeType(T);
 
-          // Encode bc as array literal expression
-          const arr = factory.createArrayLiteralExpression(
-            bc.map((v) =>
-              typeof v === "string"
-                ? factory.createStringLiteral(v)
-                : factory.createNumericLiteral(String(v))
-            ),
-            false,
-          );
+          // For `export type UserSchema = User`, T is a type reference to User
+          // We need to resolve it, but encodeType will handle that with the checker
+          const bc = encodeType(T, checker);
+
+          // Recursively convert bytecode to AST array literal
+          function bytecodeToAst(value: any): ts.Expression {
+            if (Array.isArray(value)) {
+              return factory.createArrayLiteralExpression(
+                value.map(bytecodeToAst),
+                false
+              );
+            } else if (typeof value === "string") {
+              return factory.createStringLiteral(value);
+            } else if (typeof value === "number") {
+              return factory.createNumericLiteral(String(value));
+            } else if (typeof value === "boolean") {
+              return value ? factory.createTrue() : factory.createFalse();
+            } else {
+              // Fallback for other types
+              return factory.createStringLiteral(String(value));
+            }
+          }
+
+          const arr = bytecodeToAst(bc) as ts.ArrayLiteralExpression;
           const constDecl = factory.createVariableStatement(
             [factory.createModifier(ts.SyntaxKind.ExportKeyword)],
             factory.createVariableDeclarationList([

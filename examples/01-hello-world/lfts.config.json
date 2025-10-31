@@ -1,0 +1,13 @@
+{
+  "rules": {
+    "port-interface": {
+      "enabled": false
+    },
+    "ports-not-in-data": {
+      "enabled": false
+    },
+    "data-no-functions": {
+      "enabled": true
+    }
+  }
+}

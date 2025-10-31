@@ -143,12 +143,22 @@ export function isInTypePosition(node: ts.Node): boolean {
 
 // helpers
 function readConfig(): any {
-  try {
-    const txt = Deno.readTextFileSync("lfts.config.json");
-    return JSON.parse(txt);
-  } catch {
-    return { rules: {} };
+  const candidates = ["lfp.config.json", "lfts.config.json"];
+  for (const path of candidates) {
+    try {
+      const txt = Deno.readTextFileSync(path);
+      return JSON.parse(txt);
+    } catch (err) {
+      // File missing or JSON parse failure – try next candidate.
+      if (err instanceof SyntaxError) {
+        console.warn(
+          `Failed to parse ${path}: ${err.message}. Falling back to defaults.`,
+        );
+        break;
+      }
+    }
   }
+  return { rules: {} };
 }
 
 export function hasJSDocTag(node: ts.Node, tagName: string): boolean {

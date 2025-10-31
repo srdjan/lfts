@@ -10,6 +10,9 @@ type Options = { srcDir: string; outDir: string };
 export async function compileProject(
   { srcDir, outDir }: Options,
 ): Promise<number> {
+  // Resolve srcDir to absolute path for comparison
+  const absSrcDir = await Deno.realPath(srcDir);
+
   // Recursively discover all .ts files in srcDir and subdirectories
   async function* walkDir(dir: string): AsyncGenerator<string> {
     for await (const entry of Deno.readDir(dir)) {
@@ -38,11 +41,11 @@ export async function compileProject(
   const checker = program.getTypeChecker();
 
   // 1) Gate (syntax bans) - only check files in srcDir
-  const gateDiags = runGate(program, srcDir);
+  const gateDiags = runGate(program, absSrcDir);
   if (gateDiags.length) return printDiagsAndExit("Gate", gateDiags);
 
   // 2) Policy (semantic rules) - only check files in srcDir
-  const policyDiags = runPolicy(program, checker, srcDir);
+  const policyDiags = runPolicy(program, checker, absSrcDir);
   if (policyDiags.length) return printDiagsAndExit("Policy", policyDiags);
 
   // 3) Transform (schema-root rewriter + typeOf<T>() → bytecode literal)
@@ -71,31 +74,20 @@ export async function compileProject(
     return printDiagsAndExit("Emit", emitResult.diagnostics);
   }
 
-  // Write only files from srcDir to disk
+  // Write all emitted files to disk (including dependencies)
   for (const [fileName, text] of outputFiles) {
-    // fileName format: "dist/deno_example/src/main.js"
-    // We need to check if the original .ts file is from our srcDir
 
-    // Remove outDir prefix if present
-    const withoutOutDir = fileName.startsWith(outDir + "/")
-      ? fileName.substring((outDir + "/").length)
-      : fileName;
-
-    // Replace .js with .ts to get original source file path
-    const originalFile = withoutOutDir.replace(/\.js$/, ".ts");
-
-    // Check if this source file exists in our program
-    const srcFile = program.getSourceFile(originalFile);
-    if (!srcFile) continue;
-
-    // Verify it's from srcDir (not a dependency)
-    if (!srcFile.fileName.startsWith(srcDir)) continue;
+    // Post-process: rewrite .ts extensions to .js in import statements
+    // This is needed for Deno which uses explicit file extensions
+    const processedText = text
+      .replace(/(from\s+["'].*?)\.ts(["'])/g, "$1.js$2")  // from "..." imports
+      .replace(/(import\s+["'].*?)\.ts(["'])/g, "$1.js$2"); // bare imports
 
     // Write to the output location TypeScript chose
     await Deno.mkdir(fileName.substring(0, fileName.lastIndexOf("/")), {
       recursive: true,
     });
-    await Deno.writeTextFile(fileName, text);
+    await Deno.writeTextFile(fileName, processedText);
   }
 
   return 0;
