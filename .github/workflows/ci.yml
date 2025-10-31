@@ -67,7 +67,7 @@ jobs:
       - name: Verify no OOP constructs in examples
         run: |
           echo "Checking example directories..."
-          if grep -r '\bclass\s' deno_example/ demo_cli/ --include="*.ts" 2>/dev/null; then
+          if grep -r '\bclass\s' deno_example/ --include="*.ts" 2>/dev/null; then
             echo "❌ Found class declarations in examples"
             exit 1
           fi

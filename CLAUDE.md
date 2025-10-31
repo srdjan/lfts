@@ -155,7 +155,6 @@ for benchmarks.
 - **`packages/lfts-type-runtime/`** - Runtime validator using bytecode (thin
   wrapper around @deepkit/type concepts)
 - **`deno_example/`** - Minimal working example
-- **`demo_cli/`** - Full CLI app demonstrating all LFTS patterns
 
 ### Compiler Pipeline
 

@@ -55,7 +55,6 @@ deno run -A scripts/check-no-oop.ts
 
 - `packages/`
 - `deno_example/src/`
-- `demo_cli/src/`
 - `todo_api/`
 - `scripts/`
 
@@ -143,7 +142,7 @@ deno task lint:fix    # Auto-fix lint issues (not OOP violations)
   run: grep -r '\bclass\s' packages/ --exclude-dir=fixtures || exit 0
 
 - name: Verify no OOP constructs in examples
-  run: grep -r '\bclass\s' deno_example/ demo_cli/ || exit 0
+  run: grep -r '\bclass\s' deno_example/ || exit 0
 
 - name: Run comprehensive OOP check
   run: deno run -A scripts/check-no-oop.ts

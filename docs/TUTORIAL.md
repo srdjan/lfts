@@ -23,8 +23,8 @@ LFTS is centered on three principles:
   `Op.OBJECT`, `Op.PROPERTY`, `Op.DUNION`) to provide precise error messages
   with path information without shipping the original TypeScript types.
 
-Throughout this tutorial we mirror the patterns already used in `demo_cli` and
-`deno_example` inside the repository.
+Throughout this tutorial we mirror the patterns already used in `deno_example`
+inside the repository.
 
 ## Project Setup
 
@@ -108,7 +108,7 @@ Your initial tree should look like:
 
 ### 1. Domain Types (`src/types.ts`)
 
-We will build a tiny Task app similar to `demo_cli` but pared down for clarity.
+We will build a tiny Task app to demonstrate LFTS patterns.
 
 ```ts
 // src/types.ts
@@ -653,8 +653,7 @@ The path-aware message makes it trivial to surface errors to API consumers.
   enabling fast tag dispatch and opening WASM backends that share the same
   logical spec.
 - Simplicity: The workflow—write canonical TS, run `deno task build`, run
-  `deno task start`—mirrors the architecture in `demo_cli` but applies to any
-  LFTS project.
+  `deno task start`—can be applied to any LFTS project.
 
 By following this pattern you can build services that respect functional
 programming principles, enjoy rich compile-time feedback, and still validate

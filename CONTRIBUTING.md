@@ -201,7 +201,6 @@ lfts-compiler/
 │   ├── lfts-type-compiler/    # Compiler (gate, policy, transform)
 │   └── lfts-type-runtime/     # Runtime validator
 ├── deno_example/             # Minimal example
-├── demo_cli/                 # Full-featured CLI demo
 ├── scripts/                  # Build and validation scripts
 │   ├── check-no-oop.ts      # OOP detector
 │   ├── pre-commit           # Git pre-commit hook
@@ -275,7 +274,7 @@ git commit --no-verify  # Skip pre-commit hook
 
 - Open an issue for bugs or feature requests
 - Check existing documentation in `docs/`
-- Review example code in `deno_example/` and `demo_cli/`
+- Review example code in `deno_example/`
 
 ## License
 

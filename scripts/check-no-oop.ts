@@ -78,7 +78,6 @@ const OOP_PATTERNS: OOPPattern[] = [
 const DIRECTORIES_TO_CHECK = [
   "packages",
   "deno_example/src",
-  "demo_cli/src",
   "todo_api",
   "scripts",
 ];

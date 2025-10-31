@@ -23,7 +23,6 @@ const include = [
   "lfts.config.json",
   "deno.json",
   "packages/",
-  "demo_cli/",
 ];
 
 const zip = new ZipFile();
