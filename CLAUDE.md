@@ -249,20 +249,32 @@ provides:
 
 ### Schema Files (`*.schema.ts`)
 
-Two patterns for defining schemas:
+Two patterns for defining schemas. **The schema-root pattern is recommended** for most use cases:
 
-1. **Explicit** (pre-v0.2.0):
+1. **Schema-Root Pattern** (v0.2.0+, **Recommended**):
+   ```ts
+   import type { User } from "./types.ts";
+
+   // Compiler automatically generates: export const User$ = [bytecode]
+   export type UserSchema = User;
+   ```
+   **Benefits**: Minimal ceremony, no `typeOf` import needed, clear naming convention
+
+2. **Explicit `typeOf<T>()`** (pre-v0.2.0, for complex scenarios):
    ```ts
    import { typeOf } from "../packages/lfts-type-runtime/mod.ts";
    import type { User } from "./types.ts";
+
    export const User$ = typeOf<User>();
    ```
+   **Benefits**: Explicit transformation visible in source, works for dynamic compositions
 
-2. **Zero-exposure roots** (v0.2.0+):
-   ```ts
-   import type { User } from "./types.ts";
-   export type UserSchema = User; // compiler emits: export const User$ = [...]
-   ```
+**Why explicit schemas?** See [docs/SCHEMA_GENERATION.md](docs/SCHEMA_GENERATION.md) for detailed rationale on why LFTS uses explicit compile-time transformation rather than pervasive runtime reflection (like Deepkit). Key reasons:
+- ✅ Enforces Light-FP subset (Gate/Policy passes run before transformation)
+- ✅ Minimal bundle size (only validated types ship to production, 60-80% smaller)
+- ✅ Ports discipline (can prevent ports in data schemas)
+- ✅ No decorators, no magic, no compiler patching
+- ✅ Tree-shakeable (dead code elimination removes unused schemas)
 
 ### Ports/Capabilities Pattern
 
