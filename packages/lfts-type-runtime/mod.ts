@@ -12,6 +12,34 @@ export function typeOf<T>(): any {
 export type TypeObject = unknown;
 
 // ============================================================================
+// Introspection API (Phase 1: v0.6.0)
+// ============================================================================
+
+// Re-export introspection API for convenient access
+export type {
+  PropertyInfo,
+  RefinementInfo,
+  SchemaInfo,
+  VariantInfo,
+  PortMethodInfo,
+  SchemaVisitor,
+} from "./introspection.ts";
+
+export {
+  getKind,
+  getProperties,
+  getRefinements,
+  getVariants,
+  hashSchema,
+  introspect,
+  schemasEqual,
+  traverse,
+  unwrapAll,
+  unwrapBrand,
+  unwrapReadonly,
+} from "./introspection.ts";
+
+// ============================================================================
 // Prebuilt Type Annotations
 // ============================================================================
 
