@@ -12,7 +12,8 @@ const bannedSyntax = new Set([
   ts.SyntaxKind.ConditionalType,
   ts.SyntaxKind.TemplateLiteralType,
   ts.SyntaxKind.IndexSignature,
-  ts.SyntaxKind.EnumDeclaration,
+  // Note: EnumDeclaration removed from banned list (v0.8.0)
+  // Const enums are allowed, non-const enums will be caught by type encoder
 ]);
 
 export function runGate(

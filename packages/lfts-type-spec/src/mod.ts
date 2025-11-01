@@ -31,6 +31,10 @@ export enum Op {
   REFINE_EMAIL,
   REFINE_URL,
   REFINE_PATTERN,
+  // additional refinements (v0.8.0)
+  REFINE_POSITIVE,
+  REFINE_NEGATIVE,
+  REFINE_NON_EMPTY,
   // result/option combinators (Phase 1)
   RESULT_OK,
   RESULT_ERR,
@@ -105,6 +109,10 @@ export const enc = {
     email: (t: Bytecode): Bytecode => [Op.REFINE_EMAIL, t],
     url: (t: Bytecode): Bytecode => [Op.REFINE_URL, t],
     pattern: (t: Bytecode, pattern: string): Bytecode => [Op.REFINE_PATTERN, pattern, t],
+    // additional refinements (v0.8.0)
+    positive: (t: Bytecode): Bytecode => [Op.REFINE_POSITIVE, t],
+    negative: (t: Bytecode): Bytecode => [Op.REFINE_NEGATIVE, t],
+    nonEmpty: (t: Bytecode): Bytecode => [Op.REFINE_NON_EMPTY, t],
   },
 
   // result/option combinators (Phase 1)

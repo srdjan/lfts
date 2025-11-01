@@ -11,6 +11,7 @@ Deepkit-compatible bytecode literals.
 
 **Documentation:**
 - [FEATURES.md](docs/FEATURES.md) - Currently implemented features
+- [CLI.md](docs/CLI.md) - Command-line tools (list-schemas, find-schema, generate-index)
 - [EFFECTS_GUIDE.md](docs/EFFECTS_GUIDE.md) - Effect handling with ports and AsyncResult
 - [FUTURE_DIRECTION.md](docs/FUTURE_DIRECTION.md) - Planned features and roadmap
 - [LANG-SPEC.md](docs/LANG-SPEC.md) - Light-FP language specification
@@ -49,17 +50,22 @@ deno task release
 # Run performance benchmarks
 deno run -A packages/lfts-type-runtime/benchmark.ts
 deno run -A packages/lfts-type-runtime/benchmark-union.ts
+
+# CLI tools (v0.8.0)
+deno task lfts:list              # List all schemas in project
+deno task lfts:find User         # Find schemas by name
+deno task lfts:index --dir src   # Generate barrel exports
 ```
 
 ## Test Suite Status
 
-**Current**: 17/20 tests passing (85% pass rate)
+**Current**: 19/22 tests passing (86% pass rate)
 
-The compiler test suite has 20 golden tests in
+The compiler test suite has 22 golden tests in
 [packages/lfts-type-compiler/src/testing/fixtures/](packages/lfts-type-compiler/src/testing/fixtures/).
-As of the latest refactoring work:
+As of v0.8.0:
 
-- ✅ **17 tests passing** - All core LFTS rules are working correctly
+- ✅ **19 tests passing** - All core LFTS rules + utility types + const enums working
 - ❌ **3 tests failing** - Known limitations documented in
   [KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md)
 
@@ -88,6 +94,8 @@ All essential LFTS enforcement rules are functional:
 - Brand helper detection
 - typeOf usage restrictions
 - No assertions in schema files
+- **Utility types (v0.8.0)**: Partial, Required, Pick, Omit, Record, Readonly
+- **Const enums (v0.8.0)**: Numeric and string const enums expand to literal unions
 
 ## Runtime Performance and Features (v0.4.0)
 
@@ -241,6 +249,27 @@ provides:
 - Type imports: `import type` when type-only (LFP1013)
 - Assertions: no `as` in schema files (LFP1014)
 - `typeOf<T>()`: only in `*.schema.ts` files (LFP1016)
+
+### Supported Type System Features (v0.8.0)
+
+**Utility Types** - TypeScript built-in utility types are supported and resolve at compile time:
+- `Partial<T>` - Makes all properties optional
+- `Required<T>` - Makes all properties required
+- `Pick<T, K>` - Selects subset of properties
+- `Omit<T, K>` - Excludes properties
+- `Record<K, V>` - Creates object with uniform property types
+- `Readonly<T>` - Makes properties readonly (compile-time only)
+
+**Const Enums** - Expand to literal unions at compile time:
+```typescript
+const enum Status { Pending, Active, Completed }
+// Expands to: 0 | 1 | 2
+
+const enum Color { Red = "red", Blue = "blue" }
+// Expands to: "red" | "blue"
+```
+
+**Note**: Regular enums are not supported (only `const enum`). See [PHASE3_PRIORITY2_COMPLETE.md](docs/PHASE3_PRIORITY2_COMPLETE.md) for details.
 
 ### ADT Requirements
 

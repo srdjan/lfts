@@ -38,7 +38,10 @@ export type RefinementInfo =
   | { readonly kind: "maxItems"; readonly value: number }
   | { readonly kind: "email" }
   | { readonly kind: "url" }
-  | { readonly kind: "pattern"; readonly pattern: string };
+  | { readonly kind: "pattern"; readonly pattern: string }
+  | { readonly kind: "positive" }
+  | { readonly kind: "negative" }
+  | { readonly kind: "nonEmpty" };
 
 /**
  * Discriminated union describing the structure of a schema
@@ -192,7 +195,10 @@ export function introspect(schema: TypeObject): SchemaInfo {
     case Op.REFINE_MAX_ITEMS:
     case Op.REFINE_EMAIL:
     case Op.REFINE_URL:
-    case Op.REFINE_PATTERN: {
+    case Op.REFINE_PATTERN:
+    case Op.REFINE_POSITIVE:
+    case Op.REFINE_NEGATIVE:
+    case Op.REFINE_NON_EMPTY: {
       // Collect all refinements by unwrapping nested refinement layers
       const refinements: RefinementInfo[] = [];
       let current = bc;
@@ -250,6 +256,21 @@ export function introspect(schema: TypeObject): SchemaInfo {
           case Op.REFINE_PATTERN:
             refinements.push({ kind: "pattern", pattern: current[1] as string });
             innerSchema = current[2] as TypeObject;
+            current = innerSchema as any[];
+            break;
+          case Op.REFINE_POSITIVE:
+            refinements.push({ kind: "positive" });
+            innerSchema = current[1] as TypeObject;
+            current = innerSchema as any[];
+            break;
+          case Op.REFINE_NEGATIVE:
+            refinements.push({ kind: "negative" });
+            innerSchema = current[1] as TypeObject;
+            current = innerSchema as any[];
+            break;
+          case Op.REFINE_NON_EMPTY:
+            refinements.push({ kind: "nonEmpty" });
+            innerSchema = current[1] as TypeObject;
             current = innerSchema as any[];
             break;
           default:
@@ -381,6 +402,9 @@ export function getKind(schema: TypeObject): SchemaInfo["kind"] {
     case Op.REFINE_EMAIL:
     case Op.REFINE_URL:
     case Op.REFINE_PATTERN:
+    case Op.REFINE_POSITIVE:
+    case Op.REFINE_NEGATIVE:
+    case Op.REFINE_NON_EMPTY:
       return "refinement";
     case Op.RESULT_OK:
     case Op.RESULT_ERR:

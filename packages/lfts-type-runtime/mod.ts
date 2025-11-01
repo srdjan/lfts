@@ -141,6 +141,70 @@ export type Range<MinVal extends number, MaxVal extends number> = {
   readonly __meta?: ["range", MinVal, MaxVal];
 };
 
+/**
+ * Positive number validation annotation (runtime check, v0.8.0).
+ *
+ * Usage:
+ *   type Age = number & Positive;
+ *   type Balance = number & Positive;
+ *
+ * Validates number is > 0 at runtime.
+ */
+export type Positive = { readonly __meta?: ["positive"] };
+
+/**
+ * Negative number validation annotation (runtime check, v0.8.0).
+ *
+ * Usage:
+ *   type Debt = number & Negative;
+ *   type Loss = number & Negative;
+ *
+ * Validates number is < 0 at runtime.
+ */
+export type Negative = { readonly __meta?: ["negative"] };
+
+/**
+ * Integer validation annotation (runtime check, v0.8.0).
+ *
+ * Usage:
+ *   type Count = number & Integer;
+ *   type Index = number & Integer;
+ *
+ * Validates number has no decimal part at runtime.
+ */
+export type Integer = { readonly __meta?: ["integer"] };
+
+/**
+ * Non-empty array validation annotation (runtime check, v0.8.0).
+ *
+ * Usage:
+ *   type Tags = string[] & NonEmpty;
+ *   type Items = Product[] & NonEmpty;
+ *
+ * Validates array has at least one element at runtime.
+ */
+export type NonEmpty = { readonly __meta?: ["nonEmpty"] };
+
+/**
+ * Combined positive integer annotation (convenience type, v0.8.0).
+ *
+ * Usage:
+ *   type PositiveInteger = number & Positive & Integer;
+ *
+ * Validates number is > 0 and has no decimal part.
+ */
+export type PositiveInteger = Positive & Integer;
+
+/**
+ * Combined negative integer annotation (convenience type, v0.8.0).
+ *
+ * Usage:
+ *   type NegativeInteger = number & Negative & Integer;
+ *
+ * Validates number is < 0 and has no decimal part.
+ */
+export type NegativeInteger = Negative & Integer;
+
 // ============================================================================
 // Result and Option Types
 // ============================================================================
@@ -755,6 +819,72 @@ function validateWithResult(
         ? createVError(
           buildPath(pathSegments),
           `expected to match pattern ${pattern}`,
+        )
+        : null;
+    })
+    .with(Op.REFINE_POSITIVE, () => {
+      const innerSchema = bc[1];
+      const err = validateWithResult(
+        innerSchema,
+        value,
+        pathSegments,
+        depth + 1,
+      );
+      if (err) return err;
+      if (typeof value !== "number") {
+        return createVError(
+          buildPath(pathSegments),
+          `positive refinement requires number type`,
+        );
+      }
+      return value <= 0
+        ? createVError(
+          buildPath(pathSegments),
+          `expected positive number (> 0), got ${value}`,
+        )
+        : null;
+    })
+    .with(Op.REFINE_NEGATIVE, () => {
+      const innerSchema = bc[1];
+      const err = validateWithResult(
+        innerSchema,
+        value,
+        pathSegments,
+        depth + 1,
+      );
+      if (err) return err;
+      if (typeof value !== "number") {
+        return createVError(
+          buildPath(pathSegments),
+          `negative refinement requires number type`,
+        );
+      }
+      return value >= 0
+        ? createVError(
+          buildPath(pathSegments),
+          `expected negative number (< 0), got ${value}`,
+        )
+        : null;
+    })
+    .with(Op.REFINE_NON_EMPTY, () => {
+      const innerSchema = bc[1];
+      const err = validateWithResult(
+        innerSchema,
+        value,
+        pathSegments,
+        depth + 1,
+      );
+      if (err) return err;
+      if (!Array.isArray(value)) {
+        return createVError(
+          buildPath(pathSegments),
+          `nonEmpty refinement requires array type`,
+        );
+      }
+      return value.length === 0
+        ? createVError(
+          buildPath(pathSegments),
+          `expected non-empty array`,
         )
         : null;
     })
@@ -1428,6 +1558,57 @@ function collectErrors(
             message: `expected to match pattern ${pattern}`,
           });
         }
+      }
+    })
+    .with(Op.REFINE_POSITIVE, () => {
+      const innerSchema = bc[1];
+      collectErrors(
+        innerSchema,
+        value,
+        pathSegments,
+        depth + 1,
+        errors,
+        maxErrors,
+      );
+      if (errors.length < maxErrors && typeof value === "number" && value <= 0) {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected positive number (> 0), got ${value}`,
+        });
+      }
+    })
+    .with(Op.REFINE_NEGATIVE, () => {
+      const innerSchema = bc[1];
+      collectErrors(
+        innerSchema,
+        value,
+        pathSegments,
+        depth + 1,
+        errors,
+        maxErrors,
+      );
+      if (errors.length < maxErrors && typeof value === "number" && value >= 0) {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected negative number (< 0), got ${value}`,
+        });
+      }
+    })
+    .with(Op.REFINE_NON_EMPTY, () => {
+      const innerSchema = bc[1];
+      collectErrors(
+        innerSchema,
+        value,
+        pathSegments,
+        depth + 1,
+        errors,
+        maxErrors,
+      );
+      if (errors.length < maxErrors && Array.isArray(value) && value.length === 0) {
+        errors.push({
+          path: buildPath(pathSegments),
+          message: `expected non-empty array`,
+        });
       }
     })
     // Phase 1.2: Metadata wrapper (transparent pass-through)

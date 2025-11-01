@@ -29,6 +29,10 @@
     "todo:build": "deno run -A packages/lfts-type-compiler/src/cli.ts todo_api/domain --outDir todo_api/dist",
     "todo:serve": "deno run -A todo_api/main.ts",
     "todo:dev": "deno task todo:build && deno run -A --watch=todo_api todo_api/main.ts",
-    "todo:test": "deno test -A todo_api/tests/task.test.ts"
+    "todo:test": "deno test -A todo_api/tests/task.test.ts",
+    "lfts": "deno run -A packages/lfts-cli/mod.ts",
+    "lfts:list": "deno run -A packages/lfts-cli/mod.ts list-schemas",
+    "lfts:find": "deno run -A packages/lfts-cli/mod.ts find-schema",
+    "lfts:index": "deno run -A packages/lfts-cli/mod.ts generate-index"
   }
 }
