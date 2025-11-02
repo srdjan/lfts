@@ -5,6 +5,20 @@ For currently implemented features, see [FEATURES.md](FEATURES.md).
 
 ---
 
+## Guiding Principle: Favor Composable Primitives Over Layered Frameworks
+
+LFTS is committed to maintaining a **minimal, explicit runtime** that provides composable primitives rather than layered frameworks. This principle guides all future development.
+
+**Core commitment:**
+- Provide essential validation and composition primitives
+- Keep optional features in separate modules (tree-shakeable)
+- Favor direct-style programming over monadic abstractions
+- Let applications build domain-specific helpers from basics
+
+**See [packages/lfts-type-runtime/README.md - Simplicity Charter](../packages/lfts-type-runtime/README.md#simplicity-charter) for detailed design principles.**
+
+---
+
 ## Scope Overview
 
 The current runtime executes compiler-emitted opcode arrays to validate unknown
@@ -24,9 +38,11 @@ VM** with Result-based APIs and DUNION-powered discriminant dispatch.
 
 ### Pure Function Pipelines _(Future once `|>` lands)_
 
-- **Status:** Runtime bridge shipped via `pipe`/`asPipe` helpers; long-term
-  compiler support still blocked until the TC39 pipeline operator (`|>`) reaches
-  Stage 4 and ships in TypeScript/JavaScript ecosystems.
+- **Status:** **OPTIONAL/EXPERIMENTAL** - Runtime bridge shipped via `pipe`/`asPipe` helpers
+  in separate `pipeline.ts` module; long-term compiler support still blocked until the
+  TC39 pipeline operator (`|>`) reaches Stage 4 and ships in TypeScript/JavaScript ecosystems.
+- **Import:** `import { pipe, asPipe } from "./pipeline.ts"` (not included in main module)
+- **Note:** Pipeline helpers are experimental and may change. Use at your own risk.
 - **Intended UX:** When the language-level operator is available, LFTS users
   should be able to compose pure, schema-validated functions declaratively:
 

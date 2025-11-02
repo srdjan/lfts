@@ -2,6 +2,48 @@
 
 All notable changes to the LFTS compiler project are documented here.
 
+## [0.8.0] - 2025-11-01
+
+### Added
+
+#### Phase 3 Priority 1: Annotations & CLI Tools
+- **New annotation types** for runtime validation:
+  - `Positive` - Validates number > 0
+  - `Negative` - Validates number < 0
+  - `Integer` - Validates whole numbers (no decimals)
+  - `NonEmpty` - Validates non-empty arrays
+  - Composable: `type Quantity = number & Positive & Integer`
+- **CLI tools** for schema discovery and management:
+  - `deno task lfts:list` - List all schemas in project
+  - `deno task lfts:find <name>` - Fuzzy search for schemas
+  - `deno task lfts:index --dir <path>` - Generate barrel exports
+
+#### Phase 3 Priority 2: Utility Types & Const Enums
+- **Utility type support** (compile-time transformation, zero runtime overhead):
+  - `Partial<T>`, `Required<T>`, `Pick<T, K>`, `Omit<T, K>`, `Record<K, V>`, `Readonly<T>`
+  - Composable: `type UpdateInput = Partial<Pick<User, "name" | "email">>`
+- **Const enum support** (compile-time expansion to literal unions)
+  - Numeric const enums (auto-increment and explicit values)
+  - String const enums - Zero runtime overhead
+
+#### Runtime Organization & Simplicity Charter
+- **Simplicity Charter** codified in [packages/lfts-type-runtime/README.md](packages/lfts-type-runtime/README.md#simplicity-charter)
+  - Core primitives vs optional helpers
+  - Direct-style programming (no monadic instance methods)
+  - Minimal combinator surface
+  - Ports pattern discipline
+- **Pipeline helpers** remain in separate `pipeline.ts` module (optional/experimental)
+
+### Changed
+- Gate pass now allows const enums (non-const enums rejected by type encoder)
+- Test suite expanded from 26 to 28 test fixtures (19/22 passing, 86%)
+- Documentation significantly expanded (~5,000 lines added)
+
+### Technical Metrics
+- Production code: ~1,100 LOC added
+- Zero breaking changes - purely additive release
+- Bundle size impact: <0.1%
+
 ## [Unreleased - v0.4.0]
 
 ### Added

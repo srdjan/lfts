@@ -2408,32 +2408,19 @@ export function getPortName(portSchema: TypeObject): string | undefined {
   return portSchema[1] as string;
 }
 
-/**
- * Extract method names from a PORT bytecode schema.
- * Useful for introspection and debugging.
- *
- * @param portSchema - The PORT bytecode schema
- * @returns Array of method names, or empty array if not a valid PORT schema
- */
 export function getPortMethods(portSchema: TypeObject): string[] {
-  if (!isBC(portSchema) || portSchema[0] !== Op.PORT) {
-    return [];
-  }
-
+  if (!isBC(portSchema) || portSchema[0] !== Op.PORT) return [];
   const methodCount = portSchema[2] as number;
-  const methods: string[] = [];
-
+  const names: string[] = [];
   let offset = 3;
   for (let i = 0; i < methodCount; i++) {
-    if (portSchema[offset] !== Op.PORT_METHOD) break;
-
+    if (portSchema[offset] !== Op.PORT_METHOD) {
+      return names;
+    }
     const methodName = portSchema[offset + 1] as string;
     const paramCount = portSchema[offset + 2] as number;
-    methods.push(methodName);
-
-    // Move to next method
+    names.push(methodName);
     offset += 3 + paramCount + 1;
   }
-
-  return methods;
+  return names;
 }
