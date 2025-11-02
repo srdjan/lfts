@@ -1,0 +1,9 @@
+{
+  "type": "add",
+  "left": { "type": "const", "value": 3 },
+  "right": {
+    "type": "mul",
+    "left": { "type": "const", "value": 2 },
+    "right": { "type": "const", "value": 5 }
+  }
+}

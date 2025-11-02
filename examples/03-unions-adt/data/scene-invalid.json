@@ -1,0 +1,7 @@
+{
+  "name": "broken",
+  "shapes": [
+    { "type": "circle", "radius": "big" },
+    { "type": "triangle", "side": 3 }
+  ]
+}

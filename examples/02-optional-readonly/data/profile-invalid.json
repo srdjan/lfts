@@ -1,0 +1,9 @@
+{
+  "username": "reader42",
+  "tags": ["deno", 123],
+  "address": {
+    "street": "42 Lambda Lane",
+    "city": "Lisbon",
+    "country": null
+  }
+}

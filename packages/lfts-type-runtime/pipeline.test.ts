@@ -2,7 +2,8 @@ import {
   assertEquals,
   assertRejects,
 } from "https://deno.land/std@0.224.0/testing/asserts.ts";
-import { asPipe, pipe, PipelineExecutionError, Result } from "./mod.ts";
+import { asPipe, pipe, PipelineExecutionError } from "./pipeline.ts";
+import { Result } from "./mod.ts";
 
 Deno.test("pipeline composes synchronous stages", async () => {
   const upper = asPipe((s: string) => s.toUpperCase());

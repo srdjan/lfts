@@ -1,0 +1,8 @@
+{
+  "name": "demo",
+  "shapes": [
+    { "type": "circle", "radius": 10 },
+    { "type": "square", "size": 4 },
+    { "type": "rectangle", "width": 5, "height": 7 }
+  ]
+}
