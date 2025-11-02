@@ -1,9 +1,8 @@
 // examples/01-basic-validation/src/types.schema.ts
 // Schema roots for the basic validation example.
-// The compiler transforms typeOf<T>() calls into concrete bytecode arrays.
+// The compiler automatically generates bytecode constants for each exported type alias.
 
-import { typeOf } from "../../../packages/lfts-type-runtime/mod.ts";
 import type { Product, User } from "./types.ts";
 
-export const User$ = typeOf<User>();
-export const Product$ = typeOf<Product>();
+export type UserSchema = User;
+export type ProductSchema = Product;

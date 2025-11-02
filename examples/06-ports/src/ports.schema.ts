@@ -15,3 +15,11 @@ export const TaskStorePort$ = enc.port("TaskStorePort", [
     returnType: enc.und(),
   },
 ]);
+
+export const ClockPort$ = enc.port("ClockPort", [
+  {
+    name: "now",
+    params: [],
+    returnType: enc.num(),
+  },
+]);
