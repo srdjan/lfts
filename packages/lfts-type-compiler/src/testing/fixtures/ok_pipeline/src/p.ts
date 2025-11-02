@@ -1,4 +1,4 @@
-import { asPipe, pipe } from "../../../../../../lfts-type-runtime/mod.ts";
+import { asPipe, pipe } from "../../../../../../lfts-type-runtime/pipeline.ts";
 
 const upper = asPipe((value: string) => value.toUpperCase());
 const suffix = asPipe((value: string, marker: string) => `${value}${marker}`);

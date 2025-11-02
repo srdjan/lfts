@@ -1,6 +1,6 @@
-# Standalone Validator — Known Gaps (v0.4.x)
+# Standalone Validator — Known Gaps (v0.8.0)
 
-This document tracks the remaining gaps in the built-in validator relative to a production-ready runtime. It reflects the current Deno runtime shipped with LFTS v0.4.x.
+This document tracks the remaining gaps in the built-in validator relative to a production-ready runtime. It reflects the current Deno runtime shipped with LFTS v0.8.0.
 
 **Recent improvements**
 - ✅ **Refinements**: numeric min/max/integer/range, string length/pattern/email/url, array min/max items.

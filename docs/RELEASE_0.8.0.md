@@ -34,7 +34,7 @@ All pre-release tasks have been completed successfully:
 
 ### ✅ Pre-Release Verification
 - **Full test suite:** 2 passed (28 steps) | 0 failed
-  - 28 test fixtures total (was 26 before Phase 3)
+  - 26 test fixtures total
   - 19/22 fixtures passing (86% pass rate)
   - 3 known failures documented in [KNOWN_ISSUES.md](KNOWN_ISSUES.md)
 - **Demo application:** Not applicable (deno_example doesn't exist)
@@ -48,7 +48,7 @@ All pre-release tasks have been completed successfully:
 ### ✅ Release Preparation
 - **Version:** v0.8.0 (documented in CHANGELOG.md)
 - **Documentation:** All references consistent
-  - 28 test fixtures documented
+  - 26 test fixtures documented
   - New features fully explained
   - Migration guides included
 - **Backward compatibility:** Maintained

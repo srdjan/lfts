@@ -3,6 +3,7 @@
 
 import { Op } from "../lfts-type-spec/src/mod.ts";
 import type { TypeObject } from "./mod.ts";
+import { assertBytecode } from "./mod.ts";
 
 // ============================================================================
 // Schema Information Types
@@ -719,12 +720,4 @@ export function schemasEqual(
 // ============================================================================
 // Internal Helpers
 // ============================================================================
-
-function assertBytecode(schema: unknown): asserts schema is any[] {
-  if (!Array.isArray(schema)) {
-    throw new Error("Expected bytecode array, got: " + typeof schema);
-  }
-  if (schema.length === 0) {
-    throw new Error("Invalid bytecode: empty array");
-  }
-}
+// Note: assertBytecode() is now imported from mod.ts to avoid duplication

@@ -97,7 +97,7 @@ All essential LFTS enforcement rules are functional:
 - **Utility types (v0.8.0)**: Partial, Required, Pick, Omit, Record, Readonly
 - **Const enums (v0.8.0)**: Numeric and string const enums expand to literal unions
 
-## Runtime Performance and Features (v0.4.0)
+## Runtime Performance and Features (v0.2.0 - v0.6.0)
 
 The LFTS runtime validator has been optimized for high-performance validation and includes developer-friendly introspection capabilities:
 
@@ -355,9 +355,8 @@ limitations:
 
 - No recursive/self-referential types
 - No generics, mapped/conditional types
-- No refinements (min/max, regex, etc.)
-- First-failure only error reporting
-- No excess property checking
+- Limited error reporting (first-failure by default, use `validateAll()` for multiple errors)
+- Excess property checking requires explicit strict mode
 
 ## Configuration
 

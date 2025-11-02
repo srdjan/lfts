@@ -275,6 +275,13 @@ function buildPath(segments: PathSegment[]): string {
   return path;
 }
 
+// ============================================================================
+// Validation Constants
+// ============================================================================
+
+// Simple email regex (not RFC-compliant, but good enough for most cases)
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const MAX_DEPTH = 100;
 
 // DUNION tag map cache: WeakMap keyed by bytecode array reference
@@ -763,9 +770,7 @@ function validateWithResult(
           `email refinement requires string type`,
         );
       }
-      // Simple email regex (not RFC-compliant, but good enough for most cases)
-      const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      return !emailPattern.test(value)
+      return !EMAIL_PATTERN.test(value)
         ? createVError(
           buildPath(pathSegments),
           `expected valid email format`,
@@ -990,7 +995,12 @@ function validateWith(
   if (err) throw vErrorToError(err);
 }
 
-function assertBytecode(t: any): asserts t is any[] {
+/**
+ * Internal helper to assert that a value is valid bytecode.
+ * Exported for use by introspection.ts to avoid duplication.
+ * @internal
+ */
+export function assertBytecode(t: any): asserts t is any[] {
   if (!isBC(t)) {
     const isPlaceholder = t && typeof t === "object" &&
       t.__lfp === TYPEOF_PLACEHOLDER;
@@ -1509,8 +1519,7 @@ function collectErrors(
         maxErrors,
       );
       if (errors.length < maxErrors && typeof value === "string") {
-        const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailPattern.test(value)) {
+        if (!EMAIL_PATTERN.test(value)) {
           errors.push({
             path: buildPath(pathSegments),
             message: `expected valid email format`,
@@ -1991,31 +2000,6 @@ export const AsyncResult = {
     return await Promise.race(promises);
   },
 };
-
-// ============================================================================
-// Pipeline Helpers (pre-TC39 |> bridge)
-// ============================================================================
-
-const PIPE_STAGE = Symbol.for("lfts.pipeline.stage");
-const PIPE_TOKEN = Symbol.for("lfts.pipeline.token");
-
-type PipelineMode = "value" | "result";
-
-interface StageMeta {
-  readonly label?: string;
-  readonly expectsResult: boolean;
-}
-
-interface StageSnapshot {
-  readonly index: number;
-  readonly label?: string;
-  readonly mode: PipelineMode;
-  readonly status: "ok" | "err";
-  readonly startedAt: number;
-  readonly finishedAt: number;
-  readonly durationMs: number;
-  readonly error?: unknown;
-}
 
 // ============================================================================
 // Phase 1.2: Runtime Introspection Hooks
