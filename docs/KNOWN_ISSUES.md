@@ -195,14 +195,82 @@ at build time.
 
 ## Future Work
 
+**See also**: [`docs/IMPROVEMENT_ANALYSIS.md`](IMPROVEMENT_ANALYSIS.md) for detailed analysis of pattern matching improvements.
+
+### 1. Exhaustive Match Rule Enhancement (LFP1007) - **HIGH PRIORITY**
+
+**Status**: Recommended for v0.9.0
+
+**Implementation approach**:
+
+Work with TypeScript's `Type` API directly instead of `typeToTypeNode()`:
+
+```typescript
+// Recommended fix: Avoid unreliable typeToTypeNode() conversion
+
+function analyzeMatchCall(node: ts.CallExpression, ctx: RuleContext) {
+  const valueType = ctx.checker.getTypeAtLocation(valueExpr);
+
+  // NEW: Work with Type directly, not TypeNode
+  if (!(valueType.flags & ts.TypeFlags.Union)) return;
+
+  const unionType = valueType as ts.UnionType;
+  const adtVariants = extractADTVariants(unionType, ctx.checker);
+
+  if (!adtVariants) return; // Not an ADT union
+
+  // Compare with cases object keys
+  const providedCases = extractCasesFromObjectLiteral(casesExpr);
+
+  // Check for missing/extra cases
+  validateExhaustiveness(adtVariants, providedCases, ctx);
+}
+
+function extractADTVariants(
+  unionType: ts.UnionType,
+  checker: ts.TypeChecker
+): Set<string> | null {
+  const variants = new Set<string>();
+
+  for (const type of unionType.types) {
+    // Check if type is object with 'type' discriminant
+    const typeProperty = type.getProperty('type');
+    if (!typeProperty) return null; // Not an ADT
+
+    const typeSymbol = checker.getTypeOfSymbolAtLocation(
+      typeProperty,
+      typeProperty.valueDeclaration!
+    );
+
+    // Extract literal type value
+    if (typeSymbol.flags & ts.TypeFlags.StringLiteral) {
+      const literal = (typeSymbol as ts.StringLiteralType).value;
+      variants.add(literal);
+    }
+  }
+
+  return variants.size > 0 ? variants : null;
+}
+```
+
+**Benefits**:
+- Fixes 2/3 failing tests (fail_extra_match_case, fail_non_exhaustive_match)
+- More reliable exhaustiveness checking (currently unreliable due to typeToTypeNode() issues)
+- Enables stricter pattern matching enforcement (see `docs/IMPROVEMENT_ANALYSIS.md` - Proposal 2)
+
+**Complexity**: Medium (1-2 days work)
+
+**Testing**: Target 22/22 tests passing (currently 19/22)
+
+**References**:
+- TypeScript Type API: https://github.com/microsoft/TypeScript/wiki/Using-the-Compiler-API
+- Similar implementation: ts-pattern exhaustiveness checking
+
+### 2. Type-Only Imports Rule Enhancement (LFP1013) - **LOWER PRIORITY**
+
+**Status**: Defer to future release
+
 These issues are documented for future contributors:
-
-1. **Exhaustive Match Rule Enhancement** (GitHub issue #TBD)
-   - Investigate TypeScript's Type API for union analysis
-   - Implement `typeIsADT(type: ts.Type)` helper
-   - Test with complex union types
-
-2. **Type-Only Imports Rule Enhancement** (GitHub issue #TBD)
    - Improve `isInTypePosition()` heuristic
    - Add test cases for edge cases
    - Consider semantic analysis approach

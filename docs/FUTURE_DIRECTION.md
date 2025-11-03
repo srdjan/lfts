@@ -243,21 +243,43 @@ Medium **Critical for**: Test-driven development with LFTS
 
 ## Implementation Sequencing Recommendation
 
-### Release v0.7.0+ (Future)
+**See also**: [`docs/IMPROVEMENT_ANALYSIS.md`](IMPROVEMENT_ANALYSIS.md) for detailed analysis of proposed language improvements.
+
+### Release v0.9.0 (Next)
+
+**Compiler improvements**:
+- Fix LFP1007 exhaustiveness checking bugs (use Type API instead of typeToTypeNode)
+- Target 22/22 tests passing (currently 19/22)
+- Add opt-in strict mode for pattern matching enforcement
+
+**Runtime improvements**:
+- Make pipeline.ts exception-free (add `runSafe()` method)
+- Convert validation depth limit throw to VError (non-breaking)
+- Document remaining throws as "programming errors"
+
+### Release v1.0 (Future major version)
+
+**Breaking changes**:
+- Convert introspection APIs to Result-based signatures
+- Consider Result-based match() if exhaustiveness unfixable
+- Full exception prohibition (0 throws in runtime)
+- Remove deprecated APIs (pipeline.run(), etc.)
+
+### Release v1.1+ (Future)
 
 High-priority enhancements:
 - Incremental compilation support
 - Port mocking/stubbing framework for testing
 - Memoization & lazy evaluation
 
-### Release v0.8.0+ (Future)
+### Release v1.2+ (Future)
 
 Advanced features:
 - Monadic/Functor runtime library (optional)
 - Cache eviction policies for memoization
 - Distributed tracing integration (OpenTelemetry)
 
-### Release v0.9.0+ (Future)
+### Release v1.3+ (Future)
 
 Experimental features:
 - Debugger & Trace Engine
