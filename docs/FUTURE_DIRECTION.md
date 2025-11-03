@@ -1,15 +1,20 @@
-# LFTS Future Direction
+# LFTS Future Direction & Roadmap
 
-This document outlines planned features and the development roadmap for LFTS.
-For currently implemented features, see [FEATURES.md](FEATURES.md).
+This document outlines **planned features** and future enhancements for LFTS. These are proposals and ideas for future releases, not commitments.
+
+**For currently implemented features, see [FEATURES.md](FEATURES.md).**
 
 ---
 
-## Guiding Principle: Favor Composable Primitives Over Layered Frameworks
+## Design Philosophy
 
-LFTS is committed to maintaining a **minimal, explicit runtime** that provides composable primitives rather than layered frameworks. This principle guides all future development.
+All future enhancements must align with LFTS's core principles:
 
-**Core commitment:**
+### Favor Composable Primitives Over Layered Frameworks
+
+LFTS maintains a **minimal, explicit runtime** that provides composable primitives rather than layered frameworks.
+
+**Core commitments:**
 - Provide essential validation and composition primitives
 - Keep optional features in separate modules (tree-shakeable)
 - Favor direct-style programming over monadic abstractions
@@ -17,97 +22,24 @@ LFTS is committed to maintaining a **minimal, explicit runtime** that provides c
 
 **See [packages/lfts-type-runtime/README.md - Simplicity Charter](../packages/lfts-type-runtime/README.md#simplicity-charter) for detailed design principles.**
 
----
+### Current Scope
 
-## Scope Overview
-
-The current runtime executes compiler-emitted opcode arrays to validate unknown
-data at the boundary, optionally serialize it without transformation, and
-surface errors as values. Gate/policy/transform passes enforce the Light-FP
-subset so bytecode contains only canonical data constructs (primitives, objects,
-unions, brands, readonly wrappers). The runtime is therefore a **lean validation
-VM** with Result-based APIs and DUNION-powered discriminant dispatch.
-
-**For implemented features, see [FEATURES.md](FEATURES.md)**
+The LFTS runtime is a **lean validation VM** that:
+- Executes compiler-emitted bytecode to validate unknown data
+- Surfaces errors as `Result` values (no exceptions)
+- Enforces Light-FP subset through Gate/Policy/Transform passes
+- Supports only canonical data constructs (primitives, objects, unions, brands, readonly)
+- Uses DUNION-powered O(1) discriminant dispatch for ADTs
 
 ---
 
-## Phase 1: Enrich Core Composition
+## Future Enhancements
 
-**Priority:** High value, low risk
-
-### Pure Function Pipelines _(Future once `|>` lands)_
-
-- **Status:** **OPTIONAL/EXPERIMENTAL** - Runtime bridge shipped via `pipe`/`asPipe` helpers
-  in separate `pipeline.ts` module; long-term compiler support still blocked until the
-  TC39 pipeline operator (`|>`) reaches Stage 4 and ships in TypeScript/JavaScript ecosystems.
-- **Import:** `import { pipe, asPipe } from "./pipeline.ts"` (not included in main module)
-- **Note:** Pipeline helpers are experimental and may change. Use at your own risk.
-- **Intended UX:** When the language-level operator is available, LFTS users
-  should be able to compose pure, schema-validated functions declaratively:
-
-```ts
-// Future: when |> operator is standardized
-const result = rawUser
-  |> normalizeName
-  |> validateEmail
-  |> toPersisted;
-```
-
-- **Dependency:** We will adopt the canonical TC39 pipeline semantics to avoid
-  bespoke syntax. Compiler work begins once the proposal is finalized and
-  TypeScript emits the operator in its downlevel output or native targets.
-- **Compiler:** Once the operator is supported, the compiler will analyze `|>`
-  chains inside schema-approved modules and emit `Op.PIPELINE` metadata
-  describing the ordered function handles. Until then, `pipe()` expressions are
-  treated as runtime-only helpers and skipped by pipeline passes.
-- **Runtime Support:** The runtime now exposes a pipeline executor (`pipe`,
-  `asPipe`) that short-circuits on the first `Result.err`, records stage
-  diagnostics, and supports nested pipelines. This layer remains the
-  compatibility shim until bytecode-powered pipelines land.
-- **Policy:** LFP1030 reserves bitwise `|` for the pipeline shim, so existing
-  Light-FP gates stay pure while allowing the new helpers through. Revisit once
-  native `|>` semantics are available.
-- **Compatibility:** This remains an optional ergonomic layer. Existing
-  validators and manual chaining patterns stay valid until the feature becomes
-  available.
+**Note:** The following features are planned for future releases. For currently implemented features, see [FEATURES.md](FEATURES.md).
 
 ---
 
-## Phase 2: Effect Handling (v0.5.0)
-
-**Status:** ✅ Implemented with direct-style approach
-
-Instead of monadic Effect types or explicit effect tracking, LFTS adopted a **direct-style** approach using `Promise<Result<T, E>>` with AsyncResult helpers and port validation.
-
-**Implemented features:**
-
-1. **AsyncResult Helpers** - Composition utilities for `Promise<Result>` operations
-   - `AsyncResult.try()`, `andThen()`, `map()`, `mapErr()`, `all()`, `allSettled()`, `race()`
-   - Direct style: uses standard async/await, no monads
-
-2. **Port Validation** - Runtime contract verification for ports/capabilities
-   - `validatePort<T>(portSchema, impl)` - Structural validation
-   - Added `Op.PORT`, `Op.PORT_METHOD`, `Op.EFFECT` opcodes
-   - Port schemas via `enc.port(name, methods)`
-
-3. **Compiler Warnings (LFP1030)** - Helpful guidance for best practices
-   - Suggests AsyncResult helpers for manual Promise<Result> handling
-   - Non-blocking warnings, not errors
-
-**See [EFFECTS_GUIDE.md](EFFECTS_GUIDE.md) and [FEATURES.md](FEATURES.md#3-effect-handling-with-asyncresult-v050) for complete documentation.**
-
-### Future: Advanced Effect Features (Deferred)
-
-The following advanced effect features are **not planned** for the current roadmap, as the direct-style approach with AsyncResult meets practical needs:
-
-- **Effect Tracking Runtime** - Explicit effect provenance and logging
-- **Effect Type System** - Monadic Effect<R, E, A> types
-- **Algebraic Effects** - Effect handlers and resumable computations
-
-These features add significant complexity and are better suited for specialized effect systems like ZIO or Effekt. LFTS prioritizes simplicity with direct-style async/await + Result.
-
----
+## Phase 1: Advanced Composition (Future)
 
 ### Memoization & Lazy Evaluation
 
@@ -148,9 +80,9 @@ loadAccount(id); // memo metadata compiled into Op.MEMO_* bytecode
 
 ---
 
-## Phase 3: Advanced FP Patterns & Tooling
+## Phase 2: Advanced FP Patterns & Tooling
 
-**Priority:** High effort
+**Priority:** High effort, future releases
 
 ### Monadic/Functor Runtime Library
 
@@ -255,56 +187,7 @@ await rpcBridge.advertise(binaryBundle.manifest); // share Result contracts acro
 This section proposes specific enhancements that address known gaps and
 developer pain points.
 
-### Schema Composition Operators
-
-**Description**: Composable schema transformations for common patterns
-
-**Use Cases**:
-
-```ts
-import { Schema } from "../runtime/schema.ts";
-
-// Pick subset of properties
-const UserSummary$ = Schema.pick(User$, ["id", "name"]);
-
-// Omit sensitive properties
-const PublicUser$ = Schema.omit(User$, ["passwordHash", "ssn"]);
-
-// Make all properties optional (for partial updates)
-const UserPatch$ = Schema.partial(User$);
-
-// Merge multiple schemas
-const ExtendedUser$ = Schema.merge(User$, { createdAt: enc.num() });
-```
-
-**Benefits**:
-
-- Reduce schema duplication
-- Type-safe schema derivations
-- Runtime and compile-time consistency
-
-**Complexity**: Medium
-
-### Async Result/Promise Interop
-
-**Description**: First-class async support for Result combinators
-
-**Use Cases**:
-
-```ts
-import { AsyncResult } from "../runtime/combinators.ts";
-
-const loadUser = (id: UserId): AsyncResult<User, string> =>
-  AsyncResult.from(fetchUserAPI(id))
-    .andThen(validateUserSchema)
-    .mapErr(enrichErrorContext)
-    .timeout(5000, "User fetch timeout");
-```
-
-**Benefits**: Handles real-world async boundaries (DB, HTTP, FS) without Promise
-hell
-
-**Complexity**: Medium **Critical for**: Ports pattern where most I/O is async
+**Note:** Schema composition (Partial, Pick, Omit, etc.) and AsyncResult helpers are already implemented. See [FEATURES.md](FEATURES.md) for details.
 
 ### Incremental Compilation
 
@@ -360,39 +243,34 @@ Medium **Critical for**: Test-driven development with LFTS
 
 ## Implementation Sequencing Recommendation
 
-### Release v0.5.0 (Next)
+### Release v0.7.0+ (Future)
 
-- Async Result/Promise interop
-- Schema composition operators (pick, omit, partial, merge)
+High-priority enhancements:
 - Incremental compilation support
-- Port mocking/stubbing framework
+- Port mocking/stubbing framework for testing
+- Memoization & lazy evaluation
 
-### Release v0.6.0
+### Release v0.8.0+ (Future)
 
-- Capability/Port contract validation
-- Effect tracking runtime (basic IO/State)
+Advanced features:
+- Monadic/Functor runtime library (optional)
 - Cache eviction policies for memoization
 - Distributed tracing integration (OpenTelemetry)
 
-### Release v0.7.0
+### Release v0.9.0+ (Future)
 
-- Monadic/Functor runtime library
+Experimental features:
 - Debugger & Trace Engine
 - Binary bytecode serialization for WASM/RPC
-- Pure Function Pipelines (when TC39 `|>` is available)
+- Native pipeline operator support (when TC39 `|>` is standardized)
 
 ---
 
 ## Prioritization
 
-1. **Phase 2 features** (Async interop, schema composition, incremental
-   compilation) deliver immediate developer benefit and are independent of
-   language features
-2. **Capability validation and memoization** extend Light-FP into service
-   architecture while controlling scope
-3. **Advanced FP constructs, tracing, and cross-runtime support** (Phase 3)
-   bring significant value but demand careful design and larger surface-area
-   changes; schedule after earlier phases ship and stabilize
+1. **Incremental compilation and testing tools** deliver immediate developer benefit
+2. **Memoization and lazy evaluation** extend performance optimization capabilities
+3. **Advanced FP constructs, tracing, and cross-runtime support** bring significant value but demand careful design and larger surface-area changes
 
 ---
 
@@ -428,8 +306,12 @@ incremental and reuse existing schema-root machinery.
 
 ## Summary
 
-This roadmap keeps the Light-FP philosophy intact—**types-first schemas, pure
-domain logic, and Result-based error reporting**—while progressively widening
-the runtime from a validation VM into a broader functional toolkit.
+This document outlines future enhancements that maintain LFTS's Light-FP philosophy—**types-first schemas, pure domain logic, and Result-based error reporting**—while carefully expanding capabilities through optional, tree-shakeable features.
+
+All proposals prioritize:
+- Composable primitives over layered frameworks
+- Direct-style programming over complex abstractions
+- Zero-cost abstractions and tree-shakeable modules
+- Backward compatibility with existing code
 
 **For currently implemented features, see [FEATURES.md](FEATURES.md)**
