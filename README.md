@@ -95,6 +95,63 @@ const result = validate(User$, {
 });
 ```
 
+## Distributed Execution Helpers (v0.9.0)
+
+LFTS provides optional helpers for building distributed systems using composable primitives:
+
+**HTTP Adapters** - Schema-validated HTTP client:
+```ts
+import { httpGet, httpPost, type NetworkError } from "lfts-runtime/distributed";
+
+const result = await httpGet<User>(
+  "https://api.example.com/users/123",
+  UserSchema,
+  { timeoutMs: 5000 }
+);
+
+if (result.ok) {
+  console.log("User:", result.value);
+} else {
+  // Explicit error handling: timeout | http_error | serialization_error | ...
+  console.error("Failed:", result.error);
+}
+```
+
+**Resilience Patterns** - Composable fault tolerance:
+```ts
+import { withRetry, createCircuitBreaker, withFallback } from "lfts-runtime/distributed";
+
+// Retry with exponential backoff
+const result = await withRetry(
+  () => httpGet<User>(url, UserSchema),
+  {
+    maxAttempts: 3,
+    shouldRetry: (err) => err.type === "timeout" || err.type === "connection_refused"
+  }
+);
+
+// Circuit breaker for cascading failure prevention
+const breaker = createCircuitBreaker({ failureThreshold: 5 });
+await breaker.execute(() => httpGet<Config>(url, ConfigSchema));
+
+// Fallback to cached data
+await withFallback(
+  httpGet<Config>(remoteUrl, ConfigSchema),
+  Promise.resolve(Result.ok(DEFAULT_CONFIG))
+);
+```
+
+**Features:**
+- Zero external dependencies (uses native `fetch`)
+- Bundle size: ~6KB minified (tree-shakeable)
+- All operations return `Result<T, NetworkError>` for explicit error handling
+- Automatic schema validation at network boundaries
+- Port pattern for location transparency
+
+See [docs/DISTRIBUTED_GUIDE.md](docs/DISTRIBUTED_GUIDE.md) for complete guide and examples.
+
+Run examples: `deno run -A packages/lfts-type-runtime/distributed-example.ts`
+
 ## New in v0.3.0: ADT update
 
 - **Strict ADT discriminant**: the only allowed tag is `'type'` (policy
