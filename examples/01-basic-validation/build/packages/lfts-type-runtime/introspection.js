@@ -1,6 +1,7 @@
 // packages/lfts-type-runtime/introspection.ts
 // Schema introspection API for examining type structure at runtime
 import { Op } from "../lfts-type-spec/src/mod.js";
+import { assertBytecode } from "./mod.js";
 // ============================================================================
 // Core Introspection
 // ============================================================================
@@ -25,7 +26,10 @@ import { Op } from "../lfts-type-spec/src/mod.js";
  */
 export function introspect(schema) {
     assertBytecode(schema);
-    const bc = schema;
+    // Unwrap Type objects (v0.10.0+)
+    const bc = (schema && typeof schema === "object" && "bc" in schema && Array.isArray(schema.bc))
+        ? schema.bc
+        : schema;
     const op = bc[0];
     switch (op) {
         // Primitives
@@ -562,11 +566,4 @@ export function schemasEqual(schemaA, schemaB) {
 // ============================================================================
 // Internal Helpers
 // ============================================================================
-function assertBytecode(schema) {
-    if (!Array.isArray(schema)) {
-        throw new Error("Expected bytecode array, got: " + typeof schema);
-    }
-    if (schema.length === 0) {
-        throw new Error("Invalid bytecode: empty array");
-    }
-}
+// Note: assertBytecode() is now imported from mod.ts to avoid duplication

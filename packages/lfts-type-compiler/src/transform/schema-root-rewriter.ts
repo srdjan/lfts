@@ -2,6 +2,13 @@
 import ts from "npm:typescript";
 import { encodeType } from "./type-encoder.ts";
 
+/**
+ * Transform schema-root pattern in *.schema.ts files.
+ *
+ * Before: export type UserSchema = User;
+ * After:  export type UserSchema = User;
+ *         export const User$ = createTypeObject([bytecode], { name: "User", source: "file.ts" });
+ */
 export function schemaRootRewriter(
   program: ts.Program,
   checker: ts.TypeChecker,
@@ -15,9 +22,12 @@ export function schemaRootRewriter(
         return ts.visitEachChild(node, visit, ctx);
       }
 
-      // For each exported type alias `export type NameSchema = T;`, append `export const Name$ = <bc>`
+      // For each exported type alias `export type NameSchema = T;`,
+      // append `export const Name$ = createTypeObject(bytecode, metadata)`
       if (ts.isSourceFile(node)) {
         const additions: ts.Statement[] = [];
+        let needsImport = false;
+
         for (const stmt of node.statements) {
           if (!ts.isTypeAliasDeclaration(stmt)) continue;
           if (
@@ -45,13 +55,43 @@ export function schemaRootRewriter(
               return factory.createNumericLiteral(String(value));
             } else if (typeof value === "boolean") {
               return value ? factory.createTrue() : factory.createFalse();
+            } else if (typeof value === "object" && value !== null) {
+              // Handle metadata objects
+              const props = Object.entries(value).map(([key, val]) =>
+                factory.createPropertyAssignment(
+                  key,
+                  bytecodeToAst(val)
+                )
+              );
+              return factory.createObjectLiteralExpression(props, false);
             } else {
               // Fallback for other types
               return factory.createStringLiteral(String(value));
             }
           }
 
-          const arr = bytecodeToAst(bc) as ts.ArrayLiteralExpression;
+          const bytecodeArray = bytecodeToAst(bc) as ts.ArrayLiteralExpression;
+
+          // Build metadata object
+          const metadataObject = factory.createObjectLiteralExpression([
+            factory.createPropertyAssignment(
+              "name",
+              factory.createStringLiteral(baseName)
+            ),
+            factory.createPropertyAssignment(
+              "source",
+              factory.createStringLiteral(sf.fileName)
+            ),
+          ], false);
+
+          // Create: createTypeObject(bytecode, metadata)
+          const createTypeObjectCall = factory.createCallExpression(
+            factory.createIdentifier("createTypeObject"),
+            undefined,
+            [bytecodeArray, metadataObject]
+          );
+
+          // Create: export const Name$ = createTypeObject(...)
           const constDecl = factory.createVariableStatement(
             [factory.createModifier(ts.SyntaxKind.ExportKeyword)],
             factory.createVariableDeclarationList([
@@ -59,14 +99,35 @@ export function schemaRootRewriter(
                 factory.createIdentifier(baseName + "$"),
                 undefined,
                 undefined,
-                arr,
+                createTypeObjectCall,
               ),
             ], ts.NodeFlags.Const),
           );
           additions.push(constDecl);
+          needsImport = true;
         }
+
         if (additions.length > 0) {
+          // Add import statement for createTypeObject
+          const importDecl = factory.createImportDeclaration(
+            undefined,
+            factory.createImportClause(
+              false,
+              undefined,
+              factory.createNamedImports([
+                factory.createImportSpecifier(
+                  false,
+                  undefined,
+                  factory.createIdentifier("createTypeObject")
+                )
+              ])
+            ),
+            factory.createStringLiteral("../../packages/lfts-type-runtime/mod.ts"),
+            undefined
+          );
+
           return factory.updateSourceFile(node, [
+            importDecl,
             ...node.statements,
             ...additions,
           ]);

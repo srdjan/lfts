@@ -1,4 +1,6 @@
 {
+  "name": "lfts",
+  "version": "0.10.0",
   "imports": {
     "ts-pattern": "npm:ts-pattern@^5.0.0"
   },

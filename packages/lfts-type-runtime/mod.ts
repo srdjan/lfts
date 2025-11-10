@@ -40,6 +40,46 @@ export {
 } from "./introspection.ts";
 
 // ============================================================================
+// Type Object System (Phase 1: v0.10.0)
+// ============================================================================
+
+// Re-export Type object classes and utilities
+export {
+  Type,
+  StringType,
+  NumberType,
+  BooleanType,
+  NullType,
+  UndefinedType,
+  LiteralType,
+  ArrayType,
+  TupleType,
+  ObjectType,
+  UnionType,
+  DUnionType,
+  ReadonlyType,
+  BrandType,
+  MetadataType,
+  RefineMinType,
+  RefineMaxType,
+  RefineIntegerType,
+  RefineMinLengthType,
+  RefineMaxLengthType,
+  RefineMinItemsType,
+  RefineMaxItemsType,
+  RefineEmailType,
+  RefineUrlType,
+  RefinePatternType,
+  RefinePositiveType,
+  RefineNegativeType,
+  RefineNonEmptyType,
+  createTypeObject,
+} from "./type-object.ts";
+
+// Re-export programmatic type builders
+export { t, primitives } from "./builders.ts";
+
+// ============================================================================
 // Prebuilt Type Annotations
 // ============================================================================
 
@@ -235,8 +275,9 @@ function isBC(x: unknown): x is any[] {
 }
 
 // Internal validation error type (branded for type safety)
+// Exported for use by Type object system
 type VErrorBrand = { readonly __brand: "VError" };
-type VError = {
+export type VError = {
   readonly path: string;
   readonly message: string;
   readonly fullMessage: string;
@@ -517,7 +558,8 @@ function validateUnion(
 
 // Internal validation that returns error instead of throwing (for UNION optimization)
 // Now using ts-pattern for cleaner pattern matching
-function validateWithResult(
+// Exported for use by Type object system
+export function validateWithResult(
   bc: any[],
   value: unknown,
   pathSegments: PathSegment[],
@@ -1001,12 +1043,18 @@ function validateWith(
  * @internal
  */
 export function assertBytecode(t: any): asserts t is any[] {
+  // Handle Type objects (v0.10.0+) - unwrap to bytecode
+  if (t && typeof t === "object" && "bc" in t && Array.isArray(t.bc)) {
+    // This is a Type object, validation functions will handle unwrapping
+    return;
+  }
+
   if (!isBC(t)) {
     const isPlaceholder = t && typeof t === "object" &&
       t.__lfp === TYPEOF_PLACEHOLDER;
     const hint = isPlaceholder
       ? "This looks like an untransformed `typeOf<T>()`. Run `deno task build` (compiler transform) before executing."
-      : "Expected compiler-inlined bytecode array.";
+      : "Expected compiler-inlined bytecode array or Type object.";
     throw new Error(`LFTS runtime: missing bytecode. ${hint}`);
   }
 }
@@ -1016,22 +1064,37 @@ export function decode(bc: unknown): TypeObject {
 }
 
 /**
+ * Unwrap Type objects to bytecode arrays (v0.10.0+)
+ * @param t - Bytecode array or Type object
+ * @returns Bytecode array
+ */
+function unwrapBytecode(t: TypeObject): any[] {
+  // Handle Type objects (v0.10.0+)
+  if (t && typeof t === "object" && "bc" in t && Array.isArray((t as any).bc)) {
+    return (t as any).bc;
+  }
+  // Already a bytecode array
+  return t as any[];
+}
+
+/**
  * Validate a value against a schema (throws on error)
- * @param t - Bytecode schema
+ * @param t - Bytecode schema or Type object
  * @param value - Value to validate
  * @returns The validated value (for chaining)
  * @throws VError if validation fails
  */
 export function validate(t: TypeObject, value: unknown) {
   assertBytecode(t);
-  validateWith(t as any[], value, []);
+  const bc = unwrapBytecode(t);
+  validateWith(bc, value, []);
   return value; // if valid, return value
 }
 
 /**
  * Validate a value against a schema (returns Result)
  * Functional alternative to validate() that returns success/error instead of throwing
- * @param t - Bytecode schema
+ * @param t - Bytecode schema or Type object
  * @param value - Value to validate
  * @returns Result<T, ValidationError> with either the validated value or error details
  */
@@ -1040,7 +1103,8 @@ export function validateSafe<T>(
   value: unknown,
 ): Result<T, ValidationError> {
   assertBytecode(t);
-  const err = validateWithResult(t as any[], value, [], 0);
+  const bc = unwrapBytecode(t);
+  const err = validateWithResult(bc, value, [], 0);
   if (err) {
     return { ok: false, error: { path: err.path, message: err.message } };
   }
@@ -1051,7 +1115,7 @@ export function validateSafe<T>(
  * Validate a value against a schema and collect ALL errors (error aggregation)
  * Instead of stopping at the first error, this collects all validation failures
  *
- * @param t - Bytecode schema
+ * @param t - Bytecode schema or Type object
  * @param value - Value to validate
  * @param maxErrors - Maximum number of errors to collect (default: 100, prevents infinite loops)
  * @returns ValidationResult<T> with either the validated value or all errors
@@ -1069,8 +1133,9 @@ export function validateAll<T>(
   maxErrors = 100,
 ): ValidationResult<T> {
   assertBytecode(t);
+  const bc = unwrapBytecode(t);
   const errors: ValidationError[] = [];
-  collectErrors(t as any[], value, [], 0, errors, maxErrors);
+  collectErrors(bc, value, [], 0, errors, maxErrors);
 
   if (errors.length === 0) {
     return { ok: true, value: value as T };
@@ -2007,10 +2072,13 @@ export const AsyncResult = {
 
 /**
  * Metadata extracted from a schema with introspection support.
+ * Extended in v0.10.0 to support description and examples for code generation.
  */
 export type SchemaMetadata = {
   readonly name?: string;
   readonly source?: string;
+  readonly description?: string;
+  readonly examples?: readonly unknown[];
 };
 
 /**

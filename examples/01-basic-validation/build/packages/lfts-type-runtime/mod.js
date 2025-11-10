@@ -7,6 +7,13 @@ export function typeOf() {
     return { __lfp: TYPEOF_PLACEHOLDER };
 }
 export { getKind, getProperties, getRefinements, getVariants, hashSchema, introspect, schemasEqual, traverse, unwrapAll, unwrapBrand, unwrapReadonly, } from "./introspection.js";
+// ============================================================================
+// Type Object System (Phase 1: v0.10.0)
+// ============================================================================
+// Re-export Type object classes and utilities
+export { Type, StringType, NumberType, BooleanType, NullType, UndefinedType, LiteralType, ArrayType, TupleType, ObjectType, UnionType, DUnionType, ReadonlyType, BrandType, MetadataType, RefineMinType, RefineMaxType, RefineIntegerType, RefineMinLengthType, RefineMaxLengthType, RefineMinItemsType, RefineMaxItemsType, RefineEmailType, RefineUrlType, RefinePatternType, RefinePositiveType, RefineNegativeType, RefineNonEmptyType, createTypeObject, } from "./type-object.js";
+// Re-export programmatic type builders
+export { t, primitives } from "./builders.js";
 function isBC(x) {
     return Array.isArray(x);
 }
@@ -39,6 +46,11 @@ function buildPath(segments) {
     }
     return path;
 }
+// ============================================================================
+// Validation Constants
+// ============================================================================
+// Simple email regex (not RFC-compliant, but good enough for most cases)
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_DEPTH = 100;
 // DUNION tag map cache: WeakMap keyed by bytecode array reference
 // Converts O(n) linear search to O(1) lookup after first validation
@@ -198,7 +210,8 @@ function validateUnion(bc, value, pathSegments, depth) {
 }
 // Internal validation that returns error instead of throwing (for UNION optimization)
 // Now using ts-pattern for cleaner pattern matching
-function validateWithResult(bc, value, pathSegments, depth) {
+// Exported for use by Type object system
+export function validateWithResult(bc, value, pathSegments, depth) {
     if (depth > MAX_DEPTH) {
         return createVError(buildPath(pathSegments), `maximum nesting depth (${MAX_DEPTH}) exceeded`);
     }
@@ -338,9 +351,7 @@ function validateWithResult(bc, value, pathSegments, depth) {
         if (typeof value !== "string") {
             return createVError(buildPath(pathSegments), `email refinement requires string type`);
         }
-        // Simple email regex (not RFC-compliant, but good enough for most cases)
-        const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        return !emailPattern.test(value)
+        return !EMAIL_PATTERN.test(value)
             ? createVError(buildPath(pathSegments), `expected valid email format`)
             : null;
     })
@@ -489,13 +500,23 @@ function validateWith(bc, value, pathSegments = [], depth = 0) {
     if (err)
         throw vErrorToError(err);
 }
-function assertBytecode(t) {
+/**
+ * Internal helper to assert that a value is valid bytecode.
+ * Exported for use by introspection.ts to avoid duplication.
+ * @internal
+ */
+export function assertBytecode(t) {
+    // Handle Type objects (v0.10.0+) - unwrap to bytecode
+    if (t && typeof t === "object" && "bc" in t && Array.isArray(t.bc)) {
+        // This is a Type object, validation functions will handle unwrapping
+        return;
+    }
     if (!isBC(t)) {
         const isPlaceholder = t && typeof t === "object" &&
             t.__lfp === TYPEOF_PLACEHOLDER;
         const hint = isPlaceholder
             ? "This looks like an untransformed `typeOf<T>()`. Run `deno task build` (compiler transform) before executing."
-            : "Expected compiler-inlined bytecode array.";
+            : "Expected compiler-inlined bytecode array or Type object.";
         throw new Error(`LFTS runtime: missing bytecode. ${hint}`);
     }
 }
@@ -503,27 +524,42 @@ export function decode(bc) {
     return bc;
 }
 /**
+ * Unwrap Type objects to bytecode arrays (v0.10.0+)
+ * @param t - Bytecode array or Type object
+ * @returns Bytecode array
+ */
+function unwrapBytecode(t) {
+    // Handle Type objects (v0.10.0+)
+    if (t && typeof t === "object" && "bc" in t && Array.isArray(t.bc)) {
+        return t.bc;
+    }
+    // Already a bytecode array
+    return t;
+}
+/**
  * Validate a value against a schema (throws on error)
- * @param t - Bytecode schema
+ * @param t - Bytecode schema or Type object
  * @param value - Value to validate
  * @returns The validated value (for chaining)
  * @throws VError if validation fails
  */
 export function validate(t, value) {
     assertBytecode(t);
-    validateWith(t, value, []);
+    const bc = unwrapBytecode(t);
+    validateWith(bc, value, []);
     return value; // if valid, return value
 }
 /**
  * Validate a value against a schema (returns Result)
  * Functional alternative to validate() that returns success/error instead of throwing
- * @param t - Bytecode schema
+ * @param t - Bytecode schema or Type object
  * @param value - Value to validate
  * @returns Result<T, ValidationError> with either the validated value or error details
  */
 export function validateSafe(t, value) {
     assertBytecode(t);
-    const err = validateWithResult(t, value, [], 0);
+    const bc = unwrapBytecode(t);
+    const err = validateWithResult(bc, value, [], 0);
     if (err) {
         return { ok: false, error: { path: err.path, message: err.message } };
     }
@@ -533,7 +569,7 @@ export function validateSafe(t, value) {
  * Validate a value against a schema and collect ALL errors (error aggregation)
  * Instead of stopping at the first error, this collects all validation failures
  *
- * @param t - Bytecode schema
+ * @param t - Bytecode schema or Type object
  * @param value - Value to validate
  * @param maxErrors - Maximum number of errors to collect (default: 100, prevents infinite loops)
  * @returns ValidationResult<T> with either the validated value or all errors
@@ -547,8 +583,9 @@ export function validateSafe(t, value) {
  */
 export function validateAll(t, value, maxErrors = 100) {
     assertBytecode(t);
+    const bc = unwrapBytecode(t);
     const errors = [];
-    collectErrors(t, value, [], 0, errors, maxErrors);
+    collectErrors(bc, value, [], 0, errors, maxErrors);
     if (errors.length === 0) {
         return { ok: true, value: value };
     }
@@ -868,8 +905,7 @@ function collectErrors(bc, value, pathSegments, depth, errors, maxErrors) {
         const innerSchema = bc[1];
         collectErrors(innerSchema, value, pathSegments, depth + 1, errors, maxErrors);
         if (errors.length < maxErrors && typeof value === "string") {
-            const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailPattern.test(value)) {
+            if (!EMAIL_PATTERN.test(value)) {
                 errors.push({
                     path: buildPath(pathSegments),
                     message: `expected valid email format`,
@@ -1247,297 +1283,6 @@ export const AsyncResult = {
         return await Promise.race(promises);
     },
 };
-// ============================================================================
-// Pipeline Helpers (pre-TC39 |> bridge)
-// ============================================================================
-const PIPE_STAGE = Symbol.for("lfts.pipeline.stage");
-const PIPE_TOKEN = Symbol.for("lfts.pipeline.token");
-const scheduleMicrotask = typeof queueMicrotask ===
-    "function"
-    ? queueMicrotask.bind(globalThis)
-    : (cb) => {
-        Promise.resolve().then(cb);
-    };
-const now = typeof performance !== "undefined" && typeof performance.now === "function"
-    ? () => performance.now()
-    : () => Date.now();
-let activePipelineContext = null;
-export class PipelineExecutionError extends Error {
-    error;
-    snapshots;
-    constructor(message, error, snapshots) {
-        super(message);
-        this.name = "PipelineExecutionError";
-        this.error = error;
-        this.snapshots = snapshots;
-        if (error instanceof Error) {
-            this.cause = error;
-        }
-    }
-}
-class PipelineTokenImpl {
-    ctx;
-    [PIPE_TOKEN] = true;
-    constructor(ctx) {
-        this.ctx = ctx;
-    }
-    [Symbol.toPrimitive]() {
-        activePipelineContext = this.ctx;
-        return 0;
-    }
-    async run() {
-        const outcome = await runPipeline(this.ctx);
-        this.ctx.snapshots = outcome.snapshots;
-        if ("thrown" in outcome && outcome.thrown !== undefined) {
-            throw outcome.thrown;
-        }
-        if (outcome.mode === "result") {
-            const typed = outcome.result;
-            if (typed.ok) {
-                return typed.value;
-            }
-            throw new PipelineExecutionError("Pipeline produced a Result.err", typed.error, outcome.snapshots);
-        }
-        return outcome.value;
-    }
-    async runResult() {
-        const outcome = await runPipeline(this.ctx);
-        this.ctx.snapshots = outcome.snapshots;
-        if ("thrown" in outcome && outcome.thrown !== undefined) {
-            throw outcome.thrown;
-        }
-        if (outcome.mode === "result") {
-            return outcome.result;
-        }
-        return Result.ok(outcome.value);
-    }
-    inspect() {
-        return this.ctx.snapshots;
-    }
-}
-export function asPipe(fnOrObj, options) {
-    if (typeof fnOrObj === "object" && fnOrObj !== null &&
-        typeof fnOrObj !== "function") {
-        const proxied = new Proxy(fnOrObj, {
-            get(target, prop, receiver) {
-                const value = Reflect.get(target, prop, receiver);
-                if (typeof value === "function") {
-                    const bound = value.bind(target);
-                    const label = options?.label ??
-                        (typeof prop === "string" ? prop : value.name || undefined);
-                    return asPipe(bound, { ...options, label });
-                }
-                return value;
-            },
-        });
-        return proxied;
-    }
-    if (typeof fnOrObj !== "function") {
-        throw new TypeError("asPipe expects a function or an object with methods");
-    }
-    return createStageProxy(fnOrObj, options ?? {});
-}
-export function pipe(value) {
-    const ctx = {
-        seed: () => Promise.resolve(value),
-        stages: [],
-        snapshots: [],
-    };
-    const token = new PipelineTokenImpl(ctx);
-    return token;
-}
-export function isPipelineToken(value) {
-    return typeof value === "object" && value !== null &&
-        value[PIPE_TOKEN] === true;
-}
-function createStageProxy(fn, options, boundArgs) {
-    const label = options.label ?? (fn.name || undefined);
-    const expectsResult = options.expect === "result";
-    const target = function () { };
-    const handler = {
-        apply(_target, _thisArg, args) {
-            return createStageProxy(fn, options, args);
-        },
-        get(_, prop) {
-            if (prop === Symbol.toPrimitive) {
-                return () => {
-                    const ctx = activePipelineContext;
-                    if (!ctx) {
-                        throw new Error("pipe() must be on the left-hand side of a | expression.");
-                    }
-                    const args = (boundArgs ?? []);
-                    ctx.stages.push(createStageHandler(fn, args, {
-                        label,
-                        expectsResult,
-                    }));
-                    scheduleMicrotask(() => {
-                        if (activePipelineContext === ctx) {
-                            activePipelineContext = null;
-                        }
-                    });
-                    return 0;
-                };
-            }
-            if (prop === PIPE_STAGE)
-                return true;
-            if (prop === "meta") {
-                return {
-                    label,
-                    expectsResult,
-                };
-            }
-            if (prop === "label")
-                return label;
-            return Reflect.get(fn, prop);
-        },
-    };
-    return new Proxy(target, handler);
-}
-function createStageHandler(fn, boundArgs, meta) {
-    return {
-        meta,
-        async invoke(input, ctx) {
-            const raw = await Promise.resolve(fn(input, ...boundArgs));
-            return normalizeStageOutput(raw, ctx, meta.expectsResult);
-        },
-    };
-}
-async function normalizeStageOutput(raw, ctx, expectsResult) {
-    if (isPipelineToken(raw)) {
-        if (ctx.mode === "result") {
-            return {
-                kind: "result",
-                result: await raw.runResult(),
-            };
-        }
-        return {
-            kind: "value",
-            value: await raw.run(),
-        };
-    }
-    if (expectsResult) {
-        return { kind: "result", result: ensureResult(raw) };
-    }
-    if (isResultLike(raw)) {
-        return { kind: "result", result: raw };
-    }
-    return { kind: "value", value: raw };
-}
-function ensureResult(value) {
-    return isResultLike(value) ? value : Result.ok(value);
-}
-function isResultLike(value) {
-    if (typeof value !== "object" || value === null)
-        return false;
-    if (!("ok" in value))
-        return false;
-    const ok = value.ok;
-    return typeof ok === "boolean" &&
-        (ok ? "value" in value : "error" in value);
-}
-async function runPipeline(ctx) {
-    const snapshots = [];
-    let mode = "value";
-    let currentValue;
-    let currentResult = null;
-    const resolvedSeed = await ctx.seed();
-    if (isResultLike(resolvedSeed)) {
-        mode = "result";
-        currentResult = resolvedSeed;
-        if (!resolvedSeed.ok) {
-            return {
-                mode,
-                result: resolvedSeed,
-                value: undefined,
-                snapshots,
-            };
-        }
-        currentValue = resolvedSeed.value;
-    }
-    else {
-        currentValue = resolvedSeed;
-    }
-    for (let index = 0; index < ctx.stages.length; index++) {
-        const stage = ctx.stages[index];
-        const startedAt = now();
-        let status = "ok";
-        let errorValue;
-        try {
-            const output = await stage.invoke(currentValue, { mode });
-            if (output.kind === "result") {
-                mode = "result";
-                currentResult = output.result;
-                if (!output.result.ok) {
-                    status = "err";
-                    errorValue = output.result.error;
-                    snapshots.push(createSnapshot(stage.meta, index, startedAt, status, mode, errorValue));
-                    return {
-                        mode,
-                        result: output.result,
-                        value: undefined,
-                        snapshots,
-                    };
-                }
-                currentValue = output.result.value;
-            }
-            else {
-                currentValue = output.value;
-                if (mode === "result") {
-                    currentResult = Result.ok(currentValue);
-                }
-            }
-        }
-        catch (err) {
-            status = "err";
-            errorValue = err;
-            snapshots.push(createSnapshot(stage.meta, index, startedAt, status, mode, errorValue));
-            if (mode === "result") {
-                return {
-                    mode,
-                    result: Result.err(err),
-                    value: undefined,
-                    snapshots,
-                };
-            }
-            return {
-                mode,
-                result: Result.err(err),
-                value: undefined,
-                snapshots,
-                thrown: err,
-            };
-        }
-        snapshots.push(createSnapshot(stage.meta, index, startedAt, status, mode, errorValue));
-    }
-    if (mode === "result") {
-        const finalResult = currentResult ?? Result.ok(currentValue);
-        return {
-            mode,
-            result: finalResult,
-            value: finalResult.ok ? finalResult.value : undefined,
-            snapshots,
-        };
-    }
-    return {
-        mode,
-        result: Result.ok(currentValue),
-        value: currentValue,
-        snapshots,
-    };
-}
-function createSnapshot(meta, index, startedAt, status, mode, errorValue) {
-    const finishedAt = now();
-    return {
-        index,
-        label: meta.label,
-        mode,
-        status,
-        startedAt,
-        finishedAt,
-        durationMs: finishedAt - startedAt,
-        error: status === "err" ? errorValue : undefined,
-    };
-}
 /**
  * Extract metadata from a schema if it has a METADATA wrapper.
  * Returns null if no metadata is present.
@@ -1817,28 +1562,20 @@ export function getPortName(portSchema) {
     }
     return portSchema[1];
 }
-/**
- * Extract method names from a PORT bytecode schema.
- * Useful for introspection and debugging.
- *
- * @param portSchema - The PORT bytecode schema
- * @returns Array of method names, or empty array if not a valid PORT schema
- */
 export function getPortMethods(portSchema) {
-    if (!isBC(portSchema) || portSchema[0] !== Op.PORT) {
+    if (!isBC(portSchema) || portSchema[0] !== Op.PORT)
         return [];
-    }
     const methodCount = portSchema[2];
-    const methods = [];
+    const names = [];
     let offset = 3;
     for (let i = 0; i < methodCount; i++) {
-        if (portSchema[offset] !== Op.PORT_METHOD)
-            break;
+        if (portSchema[offset] !== Op.PORT_METHOD) {
+            return names;
+        }
         const methodName = portSchema[offset + 1];
         const paramCount = portSchema[offset + 2];
-        methods.push(methodName);
-        // Move to next method
+        names.push(methodName);
         offset += 3 + paramCount + 1;
     }
-    return methods;
+    return names;
 }

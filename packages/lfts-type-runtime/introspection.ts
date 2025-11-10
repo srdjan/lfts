@@ -98,7 +98,10 @@ export type PortMethodInfo = {
  */
 export function introspect(schema: TypeObject): SchemaInfo {
   assertBytecode(schema);
-  const bc = schema as any[];
+  // Unwrap Type objects (v0.10.0+)
+  const bc = (schema && typeof schema === "object" && "bc" in schema && Array.isArray((schema as any).bc))
+    ? (schema as any).bc
+    : schema as any[];
   const op = bc[0] as Op;
 
   switch (op) {
