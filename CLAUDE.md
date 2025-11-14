@@ -9,21 +9,36 @@ This is a **Light-FP TypeScript compiler** prototype that enforces a minimal
 functional programming subset and compiles `typeOf<T>()` calls into
 Deepkit-compatible bytecode literals.
 
-**Documentation:**
-- [FEATURES.md](docs/FEATURES.md) - Currently implemented features
-- [CLI.md](docs/CLI.md) - Command-line tools (list-schemas, find-schema, generate-index)
+**Current Version**: v0.9.0 (Released 2025-11-06)
+
+**Key Philosophy**: "Composable primitives over layered frameworks" - LFTS provides minimal, composable building blocks rather than heavy abstractions. All error handling is explicit via `Result<T, E>` types, no magic or decorators, and strict enforcement of functional programming discipline.
+
+**Essential Documentation:**
+- [LANG-SPEC.md](docs/LANG-SPEC.md) - **START HERE** - Light-FP language specification and rules
+- [FEATURES.md](docs/FEATURES.md) - Currently implemented features (comprehensive)
+- [BYTECODE_REFERENCE.md](docs/BYTECODE_REFERENCE.md) - Bytecode format, opcodes, and performance analysis
 - [EFFECTS_GUIDE.md](docs/EFFECTS_GUIDE.md) - Effect handling with ports and AsyncResult
 - [DISTRIBUTED_GUIDE.md](docs/DISTRIBUTED_GUIDE.md) - Distributed execution with HTTP adapters and resilience patterns
+- [CLI.md](docs/CLI.md) - Command-line tools (list-schemas, find-schema, generate-index)
+- [KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) - Known limitations and workarounds
+- [VALIDATOR_GAPS.md](docs/VALIDATOR_GAPS.md) - Runtime validator limitations
+- [SCHEMA_GENERATION.md](docs/SCHEMA_GENERATION.md) - Why explicit schemas vs runtime reflection
 - [FUTURE_DIRECTION.md](docs/FUTURE_DIRECTION.md) - Planned features and roadmap
-- [LANG-SPEC.md](docs/LANG-SPEC.md) - Light-FP language specification
-- [BYTECODE_REFERENCE.md](docs/BYTECODE_REFERENCE.md) - Bytecode format and opcodes
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines and Light-FP discipline
+- [CHANGELOG.md](CHANGELOG.md) - Version history and release notes
+
+**What's New in v0.9.0:**
+- ✅ **Distributed execution helpers** - Production-ready HTTP adapters with schema validation
+- ✅ **Resilience patterns** - Retry, circuit breaker, fallback, timeout (all composable)
+- ✅ **NetworkError ADT** - 5 variants modeling all network failure modes
+- ✅ **31/31 tests passing** - Complete test coverage for distributed features
+- ✅ **Example 10** - Complete distributed execution tutorial
+- ✅ **Zero dependencies** - Uses native `fetch` + `AbortController`
 
 The compiler performs three passes:
 
-1. **Gate pass** - Rejects disallowed syntax (OOP constructs, decorators,
-   mapped/conditional types)
-2. **Policy pass** - Enforces semantic rules (ports discipline, data-only
-   schemas, canonical forms)
+1. **Gate pass** - Rejects disallowed syntax (OOP constructs, decorators, mapped/conditional types)
+2. **Policy pass** - Enforces semantic rules (ports discipline, data-only schemas, canonical forms)
 3. **Transform pass** - Rewrites `typeOf<T>()` → bytecode literals
 
 ## Development Commands
@@ -52,15 +67,22 @@ deno task release
 deno run -A packages/lfts-type-runtime/benchmark.ts
 deno run -A packages/lfts-type-runtime/benchmark-union.ts
 
-# CLI tools (v0.8.0)
+# CLI tools (v0.8.0+)
 deno task lfts:list              # List all schemas in project
 deno task lfts:find User         # Find schemas by name
 deno task lfts:index --dir src   # Generate barrel exports
+
+# OOP safeguards (v0.9.0+)
+deno task lint                   # Lint + check for OOP constructs
+./scripts/install-hooks.sh       # Install pre-commit hooks
+deno run -A scripts/check-no-oop.ts  # Scan for banned OOP patterns
 ```
 
 ## Test Suite Status
 
-**Current**: 19/22 tests passing (86% pass rate)
+**Current**: 19/22 tests passing (86% pass rate) - All core features working
+
+**Distributed execution**: 31/31 tests passing (100% pass rate) - Production ready
 
 The compiler test suite has 22 golden tests in
 [packages/lfts-type-compiler/src/testing/fixtures/](packages/lfts-type-compiler/src/testing/fixtures/).
@@ -271,15 +293,19 @@ See [docs/DISTRIBUTED_GUIDE.md](docs/DISTRIBUTED_GUIDE.md) for complete document
 
 ### Package Structure
 
-- **`packages/lfts-type-spec/`** - Bytecode opcodes (`Op` enum) and encoding
-  helpers
+- **`packages/lfts-type-spec/`** - Bytecode opcodes (`Op` enum) and encoding helpers
 - **`packages/lfts-type-compiler/`** - Main compiler with three passes:
   - `gate/` - Syntax gating (bans OOP, decorators, advanced TS features)
   - `policy/` - Semantic rules enforcement via pluggable rules
   - `transform/` - AST transformers for `typeOf<T>()` and schema-root rewriting
-- **`packages/lfts-type-runtime/`** - Runtime validator using bytecode (thin
-  wrapper around @deepkit/type concepts)
+- **`packages/lfts-type-runtime/`** - Runtime validator using bytecode (thin wrapper around @deepkit/type concepts)
+  - Includes distributed execution helpers (`distributed.ts`, `distributed.test.ts`, `distributed-example.ts`)
+- **`packages/lfts-cli/`** - CLI tools for schema management (list, find, generate-index)
+- **`packages/lfts-codegen/`** - Code generation utilities
+- **`packages/release/`** - Release packaging scripts
 - **`deno_example/`** - Minimal working example
+- **`examples/`** - Progressive tutorial examples (01-10, see below)
+- **`scripts/`** - Development scripts (OOP checker, git hooks)
 
 ### Compiler Pipeline
 
@@ -494,6 +520,104 @@ limitations:
 }
 ```
 
+## Key Principles for AI Assistants
+
+When working with this codebase, always follow these principles:
+
+1. **No OOP Ever**: Never suggest classes, `this`, inheritance, or decorators. Use pure functions and type aliases.
+
+2. **Explicit Over Implicit**: Prefer explicit error handling with `Result<T, E>` over exceptions. All failure modes should be typed.
+
+3. **Canonical Syntax**: Use the canonical form for all constructs (e.g., `T[]` not `Array<T>`, `prop?:` not `prop: T | undefined`).
+
+4. **Schema Files**: When working with schemas, use the schema-root pattern (`export type FooSchema = Foo`) unless there's a specific need for explicit `typeOf<T>()`.
+
+5. **Port Pattern**: For dependencies, always use port interfaces (suffix with `Port` or `Capability`) rather than direct imports.
+
+6. **Test Coverage**: Any new feature or fix should include golden tests in `packages/lfts-type-compiler/src/testing/fixtures/`.
+
+7. **Documentation First**: When adding features, update relevant documentation files (FEATURES.md, LANG-SPEC.md, etc.) alongside code changes.
+
+8. **Zero Magic**: No decorators, no reflection at runtime, no compiler patching. Everything should be explicit and inspectable.
+
+## Common Development Workflows
+
+### Building and Testing
+
+```bash
+# Full build and run cycle
+deno task build && deno task start
+
+# Run compiler tests
+deno task test
+
+# Run distributed execution tests
+deno test --allow-net packages/lfts-type-runtime/distributed.test.ts
+
+# Lint and check for OOP violations
+deno task lint
+
+# Install git hooks for automatic checking
+./scripts/install-hooks.sh
+```
+
+### Working with Examples
+
+```bash
+# Compile and run a specific example
+cd examples/05-branded-types
+deno run -A ../../packages/lfts-type-compiler/src/cli.ts . --outDir ./build
+deno run -A build/main.js
+
+# Run distributed execution examples
+deno run -A packages/lfts-type-runtime/distributed-example.ts
+```
+
+### Using CLI Tools
+
+```bash
+# List all schemas in project
+deno task lfts:list
+
+# Find specific schema
+deno task lfts:find User
+
+# Generate barrel exports (index.ts)
+deno task lfts:index --dir src
+```
+
+### Creating a Release
+
+```bash
+# Package for release (creates dist/ with bundled artifacts)
+deno task release
+```
+
+## Quick Reference
+
+### File Naming Conventions
+
+- `*.schema.ts` - Schema definition files (only place `typeOf<T>()` is allowed)
+- `*.types.ts` - Type definitions (no runtime code)
+- `*Port.ts` or `*Capability.ts` - Port interface definitions
+- `*.test.ts` - Test files
+
+### Policy Rule IDs
+
+- **LFP1001-LFP1002**: Port discipline (interfaces, naming, no ports in data)
+- **LFP1003**: Data purity (no functions in schemas)
+- **LFP1006-LFP1007**: ADT correctness (discriminant, exhaustive matching)
+- **LFP1008-LFP1016**: Canonical syntax enforcement (type vs interface, optional syntax, etc.)
+
+### Bytecode Opcodes
+
+Most common opcodes (see [packages/lfts-type-spec/src/mod.ts](packages/lfts-type-spec/src/mod.ts)):
+- `Op.STRING`, `Op.NUMBER`, `Op.BOOLEAN`, `Op.ANY`, `Op.UNKNOWN`, `Op.UNDEFINED`, `Op.NULL`, `Op.VOID`
+- `Op.LITERAL`, `Op.ARRAY`, `Op.TUPLE`, `Op.OBJECT`, `Op.PROPERTY`
+- `Op.UNION`, `Op.DUNION` (discriminated union - use for ADTs)
+- `Op.READONLY`, `Op.BRAND`
+- `Op.INTERSECTION` (only for branding)
+
 ## Important Patterns
 
 ### Adding a New Policy Rule
@@ -536,12 +660,52 @@ limitations:
 4. Add transformer logic in
    [packages/lfts-type-compiler/src/transform/typeOf-rewriter.ts](packages/lfts-type-compiler/src/transform/typeOf-rewriter.ts)
 
+## Tutorial Examples
+
+The `examples/` directory contains 10 progressive, runnable examples. Work through them in order:
+
+| #  | Folder                     | Focus                                                   |
+|----|----------------------------|---------------------------------------------------------|
+| 01 | `01-basic-validation`      | Primitive/object schemas and boundary validation        |
+| 02 | `02-optional-readonly`     | Optional fields, readonly collections, aggregated errors|
+| 03 | `03-unions-adt`            | Discriminated unions (ADTs) and detailed diagnostics    |
+| 04 | `04-result-pattern`        | Modelling `Result<T, E>` style flows                    |
+| 05 | `05-branded-types`         | Nominal typing with brands                              |
+| 06 | `06-ports`                 | Validating capability ports                             |
+| 07 | `07-async-result`          | Async error handling with `AsyncResult` helpers         |
+| 08 | `08-pattern-matching`      | Exhaustive `match()` usage over ADTs                    |
+| 09 | `09-mini-application`      | Putting it all together in a tiny hexagonal script      |
+| 10 | `10-distributed-execution` | HTTP adapters, resilience patterns, circuit breakers    |
+
+Each example can be compiled and run:
+```bash
+cd examples/NN-example-name
+deno run -A ../../packages/lfts-type-compiler/src/cli.ts . --outDir ./build
+deno run -A build/main.js
+```
+
+## OOP Safeguards
+
+This codebase strictly enforces **Light-FP principles** and prohibits all OOP constructs:
+
+**Banned constructs:**
+- ❌ `class`, `extends`, `implements`, `constructor`, `new` (except built-ins like `Map`, `Error`)
+- ❌ `this`, `super`
+- ❌ Decorators (legacy or TC39)
+
+**Multiple layers of protection:**
+
+1. **Deno Lint** - `deno task lint` checks before commit
+2. **Pre-commit Hook** - Install with `./scripts/install-hooks.sh` (checks on every commit)
+3. **CI Pipeline** - GitHub Actions runs checks on all PRs
+4. **Custom Checker** - `scripts/check-no-oop.ts` scans entire codebase for violations
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full Light-FP guidelines and contribution workflow.
+
 ## Language Specification
 
 Full spec in [LANG-SPEC.md](docs/LANG-SPEC.md). Key points:
 
-- **Allowed**: primitives, arrays, tuples, objects, unions, readonly,
-  intersections (for branding only)
-- **Disallowed**: classes, decorators, `this`, mapped/conditional types,
-  generics (in schemas)
+- **Allowed**: primitives, arrays, tuples, objects, unions, readonly, intersections (for branding only)
+- **Disallowed**: classes, decorators, `this`, mapped/conditional types, generics (in schemas)
 - All policies enforced at compile time, not via linter
