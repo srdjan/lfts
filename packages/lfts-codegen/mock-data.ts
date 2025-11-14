@@ -25,57 +25,76 @@ const DEFAULT_OPTIONS: Required<MockOptions> = {
   minArrayLength: 1,
 };
 
-// Simple seeded random number generator
-class SeededRandom {
-  private seed: number;
+// Simple seeded random number generator (functional style)
+type SeededRandom = {
+  readonly seed: number;
+};
 
-  constructor(seed: number) {
-    this.seed = seed;
-  }
+function createSeededRandom(seed: number): SeededRandom {
+  return { seed };
+}
 
-  next(): number {
-    this.seed = (this.seed * 9301 + 49297) % 233280;
-    return this.seed / 233280;
-  }
+function next(rng: SeededRandom): readonly [number, SeededRandom] {
+  const newSeed = (rng.seed * 9301 + 49297) % 233280;
+  return [newSeed / 233280, { seed: newSeed }];
+}
 
-  nextInt(min: number, max: number): number {
-    return Math.floor(this.next() * (max - min + 1)) + min;
-  }
+function nextInt(rng: SeededRandom, min: number, max: number): readonly [number, SeededRandom] {
+  const [value, newRng] = next(rng);
+  return [Math.floor(value * (max - min + 1)) + min, newRng];
+}
 
-  nextBoolean(): boolean {
-    return this.next() < 0.5;
-  }
+function nextBoolean(rng: SeededRandom): readonly [boolean, SeededRandom] {
+  const [value, newRng] = next(rng);
+  return [value < 0.5, newRng];
+}
 
-  choose<T>(array: readonly T[]): T {
-    return array[this.nextInt(0, array.length - 1)];
-  }
+function choose<T>(rng: SeededRandom, array: readonly T[]): readonly [T, SeededRandom] {
+  const [index, newRng] = nextInt(rng, 0, array.length - 1);
+  return [array[index], newRng];
+}
 
-  nextDigit(): string {
-    return String(this.nextInt(0, 9));
-  }
+function nextDigit(rng: SeededRandom): readonly [string, SeededRandom] {
+  const [value, newRng] = nextInt(rng, 0, 9);
+  return [String(value), newRng];
+}
 
-  nextUpperLetter(): string {
-    return String.fromCharCode(65 + this.nextInt(0, 25)); // A-Z
-  }
+function nextUpperLetter(rng: SeededRandom): readonly [string, SeededRandom] {
+  const [value, newRng] = nextInt(rng, 0, 25);
+  return [String.fromCharCode(65 + value), newRng]; // A-Z
+}
 
-  nextLowerLetter(): string {
-    return String.fromCharCode(97 + this.nextInt(0, 25)); // a-z
-  }
+function nextLowerLetter(rng: SeededRandom): readonly [string, SeededRandom] {
+  const [value, newRng] = nextInt(rng, 0, 25);
+  return [String.fromCharCode(97 + value), newRng]; // a-z
 }
 
 /**
  * Generate a string matching common regex patterns
  */
-function generatePatternString(pattern: string, rng: SeededRandom): string {
+function generatePatternString(pattern: string, rngState: { rng: SeededRandom }): string {
+  // Helper to get next digit and update state
+  const getDigit = (): string => {
+    const [digit, newRng] = nextDigit(rngState.rng);
+    rngState.rng = newRng;
+    return digit;
+  };
+
+  const getUpperLetter = (): string => {
+    const [letter, newRng] = nextUpperLetter(rngState.rng);
+    rngState.rng = newRng;
+    return letter;
+  };
+
   // Handle common patterns
   if (pattern === "^\\d{5}$") {
     // US ZIP code
-    return Array.from({ length: 5 }, () => rng.nextDigit()).join("");
+    return Array.from({ length: 5 }, getDigit).join("");
   }
   if (pattern === "^\\d{5}-\\d{4}$") {
     // US ZIP+4 code
-    return `${Array.from({ length: 5 }, () => rng.nextDigit()).join("")}-${
-      Array.from({ length: 4 }, () => rng.nextDigit()).join("")
+    return `${Array.from({ length: 5 }, getDigit).join("")}-${
+      Array.from({ length: 4 }, getDigit).join("")
     }`;
   }
   if (pattern === "^[A-Z]+$") {
@@ -88,14 +107,14 @@ function generatePatternString(pattern: string, rng: SeededRandom): string {
   }
   if (pattern === "^[A-Z]{2}$") {
     // Two uppercase letters (state code)
-    return rng.nextUpperLetter() + rng.nextUpperLetter();
+    return getUpperLetter() + getUpperLetter();
   }
   if (pattern.match(/^\^\\d\{(\d+)\}\$$/)) {
     // Exactly N digits
     const match = pattern.match(/^\^\\d\{(\d+)\}\$$/);
     if (match) {
       const length = parseInt(match[1]);
-      return Array.from({ length }, () => rng.nextDigit()).join("");
+      return Array.from({ length }, getDigit).join("");
     }
   }
 
@@ -133,77 +152,88 @@ export function generateMockData(
   options: MockOptions = {},
 ): unknown {
   const opts = { ...DEFAULT_OPTIONS, ...options };
-  const rng = new SeededRandom(opts.seed);
+  // Use mutable state holder for functional RNG
+  const rngState = { rng: createSeededRandom(opts.seed) };
   let counter = 0;
 
-  return generate(schema, rng);
+  return generate(schema);
 
-  function generate(currentSchema: TypeObject, rng: SeededRandom): unknown {
+  function generate(currentSchema: TypeObject): unknown {
     const info = introspect(currentSchema);
 
     switch (info.kind) {
       case "primitive":
-        return generatePrimitive(info, rng);
+        return generatePrimitive(info, rngState);
 
       case "literal":
         return info.value;
 
       case "array": {
-        const length = rng.nextInt(opts.minArrayLength, opts.maxArrayLength);
-        return Array.from({ length }, () => generate(info.element, rng));
+        const [length, newRng] = nextInt(rngState.rng, opts.minArrayLength, opts.maxArrayLength);
+        rngState.rng = newRng;
+        return Array.from({ length }, () => generate(info.element));
       }
 
       case "tuple":
-        return info.elements.map((el) => generate(el, rng));
+        return info.elements.map((el) => generate(el));
 
       case "object": {
         const result: Record<string, unknown> = {};
         for (const prop of info.properties) {
-          if (!prop.optional || rng.next() < opts.optionalProbability) {
-            result[prop.name] = generate(prop.type, rng);
+          const [randomValue, newRng] = next(rngState.rng);
+          rngState.rng = newRng;
+          if (!prop.optional || randomValue < opts.optionalProbability) {
+            result[prop.name] = generate(prop.type);
           }
         }
         return result;
       }
 
-      case "union":
+      case "union": {
         // Pick a random alternative
-        return generate(rng.choose(info.alternatives), rng);
+        const [alt, newRng] = choose(rngState.rng, info.alternatives);
+        rngState.rng = newRng;
+        return generate(alt);
+      }
 
       case "dunion": {
         // Pick a random variant
-        const variant = rng.choose(info.variants);
-        return generate(variant.schema, rng);
+        const [variant, newRng] = choose(rngState.rng, info.variants);
+        rngState.rng = newRng;
+        return generate(variant.schema);
       }
 
       case "brand":
         // Brands are transparent at runtime
-        return generate(info.inner, rng);
+        return generate(info.inner);
 
       case "readonly":
         // Readonly is transparent at runtime
-        return generate(info.inner, rng);
+        return generate(info.inner);
 
       case "refinement":
-        return generateRefinement(info, rng);
+        return generateRefinement(info, rngState);
 
       case "metadata":
         // Metadata is transparent
-        return generate(info.inner, rng);
+        return generate(info.inner);
 
       case "result":
         // Generate a success result
         if (info.valueType) {
-          return { ok: true, value: generate(info.valueType, rng) };
+          return { ok: true, value: generate(info.valueType) };
         }
         return { ok: true, value: null };
 
-      case "option":
+      case "option": {
         // 50% chance of Some vs None
-        if (rng.nextBoolean() && info.valueType) {
-          return generate(info.valueType, rng);
+        const [shouldGenerate, newRng] = nextBoolean(rngState.rng);
+        rngState.rng = newRng;
+        if (shouldGenerate && info.valueType) {
+          return generate(info.valueType);
         }
         return null;
+      }
 
       case "port":
         // Ports can't be mocked (runtime behavior)
@@ -217,15 +247,21 @@ export function generateMockData(
 
   function generatePrimitive(
     info: Extract<SchemaInfo, { kind: "primitive" }>,
-    rng: SeededRandom,
+    rngState: { rng: SeededRandom },
   ): unknown {
     switch (info.type) {
       case "string":
         return `mock-string-${counter++}`;
-      case "number":
-        return rng.nextInt(0, 100);
-      case "boolean":
-        return rng.nextBoolean();
+      case "number": {
+        const [value, newRng] = nextInt(rngState.rng, 0, 100);
+        rngState.rng = newRng;
+        return value;
+      }
+      case "boolean": {
+        const [value, newRng] = nextBoolean(rngState.rng);
+        rngState.rng = newRng;
+        return value;
+      }
       case "null":
         return null;
       case "undefined":
@@ -235,7 +271,7 @@ export function generateMockData(
 
   function generateRefinement(
     info: Extract<SchemaInfo, { kind: "refinement" }>,
-    rng: SeededRandom,
+    rngState: { rng: SeededRandom },
   ): unknown {
     const innerInfo = introspect(info.inner);
 
@@ -252,7 +288,7 @@ export function generateMockData(
             value = `https://example.com/${counter}`;
           } else if (ref.kind === "pattern") {
             // Generate value matching common patterns
-            value = generatePatternString(ref.pattern, rng);
+            value = generatePatternString(ref.pattern, rngState);
           }
         }
 
@@ -283,12 +319,13 @@ export function generateMockData(
           }
         }
 
-        let value = rng.nextInt(min, max);
+        const [value, newRng] = nextInt(rngState.rng, min, max);
+        rngState.rng = newRng;
 
         // Apply integer constraint
         for (const ref of info.refinements) {
           if (ref.kind === "integer") {
-            value = Math.floor(value);
+            return Math.floor(value);
           }
         }
 
@@ -297,6 +334,6 @@ export function generateMockData(
     }
 
     // Fallback: just generate the inner type
-    return generate(info.inner, rng);
+    return generate(info.inner);
   }
 }

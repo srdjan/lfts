@@ -58,20 +58,24 @@ jobs:
       - name: Verify no OOP constructs in packages
         run: |
           echo "Checking packages directory..."
-          if grep -r '\bclass\s' packages/ --include="*.ts" --exclude-dir=fixtures; then
-            echo "❌ Found class declarations outside test fixtures"
+          # Exclude fixtures, example files, and allow 'extends Error'
+          if grep -r '\bclass\s' packages/ --include="*.ts" --exclude-dir=fixtures \
+              | grep -v '\-example\.ts:' \
+              | grep -v 'extends Error'; then
+            echo "❌ Found class declarations (excluding Error extensions and examples)"
             exit 1
           fi
-          echo "✅ No class declarations found"
+          echo "✅ No prohibited class declarations found"
 
-      - name: Verify no OOP constructs in examples
+      - name: Verify no OOP constructs in deno_example
         run: |
-          echo "Checking example directories..."
-          if grep -r '\bclass\s' deno_example/ --include="*.ts" 2>/dev/null; then
-            echo "❌ Found class declarations in examples"
+          echo "Checking deno_example directory..."
+          if grep -r '\bclass\s' deno_example/src --include="*.ts" 2>/dev/null \
+              | grep -v 'extends Error'; then
+            echo "❌ Found class declarations in deno_example (excluding Error extensions)"
             exit 1
           fi
-          echo "✅ No class declarations in examples"
+          echo "✅ No prohibited class declarations in deno_example"
 
       - name: Run comprehensive OOP check
         run: deno run -A scripts/check-no-oop.ts

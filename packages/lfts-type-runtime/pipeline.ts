@@ -116,29 +116,36 @@ export interface PipelineToken<T, E = never> {
 
 interface PipelineTokenInternalContext extends PipelineAssemblyContext { snapshots: StageSnapshot[] }
 
-class PipelineTokenImpl<T = unknown, E = unknown> implements PipelineToken<T, E> {
-  readonly [PIPE_TOKEN] = true as const;
-  constructor(private readonly ctx: PipelineTokenInternalContext) {}
-  [Symbol.toPrimitive](): number { activePipelineContext = this.ctx; return 0 }
-  async run(): Promise<T> {
-    const outcome = await runPipeline(this.ctx);
-    this.ctx.snapshots = outcome.snapshots;
-    if ("thrown" in outcome && outcome.thrown !== undefined) throw outcome.thrown;
-    if (outcome.mode === "result") {
-      const typed = outcome.result as Result<T, E>;
-      if (typed.ok) return typed.value;
-      throw new PipelineExecutionError("Pipeline produced a Result.err", typed.error, outcome.snapshots);
+// Factory function to create PipelineToken instances (functional style, no class)
+function createPipelineToken<T = unknown, E = unknown>(ctx: PipelineTokenInternalContext): PipelineToken<T, E> {
+  return {
+    [PIPE_TOKEN]: true as const,
+    [Symbol.toPrimitive](): number {
+      activePipelineContext = ctx;
+      return 0;
+    },
+    async run(): Promise<T> {
+      const outcome = await runPipeline(ctx);
+      ctx.snapshots = outcome.snapshots;
+      if ("thrown" in outcome && outcome.thrown !== undefined) throw outcome.thrown;
+      if (outcome.mode === "result") {
+        const typed = outcome.result as Result<T, E>;
+        if (typed.ok) return typed.value;
+        throw new PipelineExecutionError("Pipeline produced a Result.err", typed.error, outcome.snapshots);
+      }
+      return outcome.value as T;
+    },
+    async runResult(): Promise<Result<T, E>> {
+      const outcome = await runPipeline(ctx);
+      ctx.snapshots = outcome.snapshots;
+      if ("thrown" in outcome && outcome.thrown !== undefined) throw outcome.thrown;
+      if (outcome.mode === "result") return outcome.result as Result<T, E>;
+      return ResultNS.ok(outcome.value as T);
+    },
+    inspect(): readonly StageSnapshot[] {
+      return ctx.snapshots;
     }
-    return outcome.value as T;
-  }
-  async runResult(): Promise<Result<T, E>> {
-    const outcome = await runPipeline(this.ctx);
-    this.ctx.snapshots = outcome.snapshots;
-    if ("thrown" in outcome && outcome.thrown !== undefined) throw outcome.thrown;
-    if (outcome.mode === "result") return outcome.result as Result<T, E>;
-    return ResultNS.ok(outcome.value as T);
-  }
-  inspect(): readonly StageSnapshot[] { return this.ctx.snapshots }
+  };
 }
 
 export interface AsPipeOptions { readonly label?: string; readonly expect?: "value" | "result" }
@@ -168,7 +175,7 @@ export function pipe<T>(value: T | Promise<T>): PipelineToken<T, never>;
 export function pipe<T, E>(value: Result<T, E> | Promise<Result<T, E>>): PipelineToken<T, E>;
 export function pipe(value: unknown): PipelineToken<unknown, unknown> {
   const ctx: PipelineTokenInternalContext = { seed: () => Promise.resolve(value), stages: [], snapshots: [] };
-  return new PipelineTokenImpl(ctx);
+  return createPipelineToken(ctx);
 }
 
 export function isPipelineToken(value: unknown): value is PipelineToken<unknown> {

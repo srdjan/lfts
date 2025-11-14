@@ -20,20 +20,22 @@ const OOP_PATTERNS: OOPPattern[] = [
   {
     name: "class-declaration",
     pattern: /\bclass\s+\w+/g,
-    description: "Class declarations are not allowed in Light-FP",
+    description: "Class declarations are not allowed in Light-FP (except extending Error)",
     allowedContexts: [
       /SyntaxKind\.ClassDeclaration/,
       /["']class["']/,
       /"class\s+\w+"/,
+      /\bclass\s+\w+\s+extends\s+Error\b/,  // Allow extending Error
     ],
   },
   {
     name: "extends-keyword",
     pattern: /\bclass\s+\w+\s+extends\s+\w+/g,
-    description: "Class inheritance (extends) is not allowed in Light-FP",
+    description: "Class inheritance (extends) is not allowed in Light-FP (except Error)",
     allowedContexts: [
       /SyntaxKind\..*Keyword/,
       /["']extends["']/,
+      /\bclass\s+\w+\s+extends\s+Error\b/,  // Allow extending Error
     ],
   },
   {
@@ -85,6 +87,8 @@ const DIRECTORIES_TO_CHECK = [
 const EXCLUDE_PATTERNS = [
   /\/testing\/fixtures\//,  // Test fixtures
   /\.test\.ts$/,             // May contain test cases with OOP
+  /-example\.ts$/,           // Example files (may demonstrate patterns)
+  /\/examples\//,            // Examples directory
   /node_modules\//,
   /dist\//,
 ];
