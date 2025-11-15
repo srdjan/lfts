@@ -405,22 +405,62 @@ User$.validate(data);                      // Method API
 
 ### Refinement Chaining (TypeScript Limitation)
 
-**Problem**: Refinements don't preserve the class type due to TypeScript's type system.
+**Problem**: Refinement methods don't preserve the class type due to TypeScript's type system constraints.
 
 ```typescript
-// ❌ Doesn't work - .maxLength() not available
+// ❌ DOESN'T WORK - .maxLength() not available after first refinement
 const Username$ = t.string().minLength(3).maxLength(20);
-
-// ✅ Workaround 1: Apply one refinement at a time
-const Username$ = t.string().minLength(3);
-const ValidUsername$ = Username$.maxLength(20);  // Error: maxLength doesn't exist
-
-// ✅ Workaround 2: Nest constructors (for now)
-const Username$ = new StringType().minLength(3);
-// Note: Still can't chain, need to create separate instances
+//                                        ^^^^^^^^^^^^ Error: maxLength doesn't exist on Type<unknown>
 ```
 
-**Fix in progress**: Investigating builder pattern or fluent interface improvements.
+**Root Cause**: The refinement methods return `Type<T>` (the base class) instead of `StringType` due to TypeScript's limitations with method return types.
+
+**Workarounds**:
+
+**Option 1: Manual composition (Recommended)**
+```typescript
+// Create a refined type using helper functions
+import { RefineMinLengthType, RefineMaxLengthType } from "@lfts/type-runtime/type-object";
+
+const Username$ = new RefineMaxLengthType(
+  new RefineMinLengthType(
+    t.string().bc,  // Get the bytecode
+    3
+  ).bc,
+  20
+);
+```
+
+**Option 2: Single refinement per variable**
+```typescript
+// Apply one refinement and accept the limitation
+const Username$ = t.string().minLength(3);  // ✅ Works
+// For additional refinements, manually construct bytecode
+```
+
+**Option 3: Direct bytecode construction**
+```typescript
+import { enc } from "@lfts/type-spec";
+
+const Username$ = createTypeObject(
+  enc.refine.maxLength(
+    enc.refine.minLength([Op.STRING], 3),
+    20
+  )
+);
+```
+
+**Best Practice**: For schemas with multiple refinements, use the schema-root pattern and let TypeScript infer the constraints:
+
+```typescript
+// types.ts
+type Username = string & MinLength<3> & MaxLength<20>;  // TypeScript handles this
+
+// types.schema.ts
+export type UsernameSchema = Username;  // Compiler generates refined bytecode
+```
+
+**Future Work**: We're investigating builder patterns that could enable chaining while preserving types.
 
 ## API Reference
 

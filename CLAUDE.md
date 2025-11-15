@@ -161,6 +161,24 @@ The LFTS runtime validator has been optimized for high-performance validation an
    - Multiple hooks per event, errors caught to prevent breaking validation
    - Example: `inspect(UserSchema, ctx => ctx.onFailure(err => log(err)))`
 
+7. **Union Similarity Diagnostics** (v0.11.0): **Helpful error messages for union failures**
+   - Automatically calculates similarity scores for failed union alternatives
+   - Reports the "closest match" with actionable diagnostics
+   - Example: `"no union alternative matched. Closest match: missing 2 required properties: role, permissions"`
+   - Weighted scoring: invalid properties (0.4), missing properties (0.1), valid (1.0)
+   - Minimal overhead (~10-15%) only when validation fails
+   - Works with `validate()`, `validateSafe()`, and `validateAll()`
+
+8. **Builder API Convenience Methods** (v0.12.0): **Ergonomic shortcuts for common patterns**
+   - **String methods**: `t.email()`, `t.url()`, `t.uuid()`
+   - **Number methods**: `t.positiveNumber()`, `t.positiveInteger()`, `t.integer()`
+   - **Array methods**: `t.nonEmptyArray(elementType)`
+   - **Enum builders**: `t.stringEnum([...])`, `t.numberEnum([...])`, `t.booleanEnum([...])`
+   - **Literal aliases**: `t.constString(value)`, `t.constNumber(value)`
+   - Example: `t.object({ email: t.email(), age: t.positiveInteger(), role: t.stringEnum(["user", "admin"]) })`
+   - Reduces boilerplate, self-documenting code
+   - Zero overhead - delegates to existing primitives
+
 ### Performance Characteristics
 
 - **ADT validation**: 8-16M ops/sec (DUNION with caching)

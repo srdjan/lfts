@@ -1,5 +1,6 @@
 // packages/lfts-type-compiler/src/transform/schema-root-rewriter.ts
 import ts from "npm:typescript";
+import * as path from "https://deno.land/std@0.208.0/path/mod.ts";
 import { encodeType } from "./type-encoder.ts";
 
 /**
@@ -108,6 +109,45 @@ export function schemaRootRewriter(
         }
 
         if (additions.length > 0) {
+          // Calculate relative import path dynamically
+          // Find the runtime package relative to the compiler location
+          const compilerOptions = program.getCompilerOptions();
+          const outDir = compilerOptions.outDir || ".";
+          const currentDir = program.getCurrentDirectory();
+
+          // Determine where this output file will be written
+          // TypeScript preserves the source directory structure in outDir
+          const outFilePath = path.resolve(
+            currentDir,
+            outDir,
+            path.relative(currentDir, sf.fileName)
+          ).replace(/\.ts$/, ".js");
+
+          // Find runtime package relative to compiler location
+          // This transformer is in packages/lfts-type-compiler/src/transform/
+          // From src/transform/ go up 2 levels to lfts-type-compiler/
+          const compilerDir = new URL(".", import.meta.url).pathname;
+          const compilerPackageDir = path.resolve(compilerDir, "../.."); // Up to packages/lfts-type-compiler
+          const packagesDir = path.resolve(compilerPackageDir, ".."); // Up to packages/
+          const runtimeModulePath = path.join(packagesDir, "lfts-type-runtime/mod.ts");
+
+          // Calculate relative path from output file directory to runtime module
+          let importPath = path.relative(
+            path.dirname(outFilePath),
+            runtimeModulePath
+          );
+
+          // Ensure forward slashes for ES modules (Windows compatibility)
+          importPath = importPath.replace(/\\/g, "/");
+
+          // Ensure path starts with ./ or ../
+          if (!importPath.startsWith(".")) {
+            importPath = "./" + importPath;
+          }
+
+          // Keep .ts extension - the compiler's post-processor will convert it to .js
+          // This is already the case since runtimeModulePath ends with mod.ts
+
           // Add import statement for createTypeObject
           const importDecl = factory.createImportDeclaration(
             undefined,
@@ -122,7 +162,7 @@ export function schemaRootRewriter(
                 )
               ])
             ),
-            factory.createStringLiteral("../../packages/lfts-type-runtime/mod.ts"),
+            factory.createStringLiteral(importPath),
             undefined
           );
 

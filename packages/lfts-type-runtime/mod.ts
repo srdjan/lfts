@@ -541,18 +541,262 @@ function validateDUnion(
   return err;
 }
 
+// ============================================================================
+// Union Similarity Scoring (Phase 2.1: v0.11.0)
+// ============================================================================
+
+/**
+ * Similarity score between a value and a schema alternative.
+ * Higher score = closer match (0.0 = no match, 1.0 = perfect match but validation failed)
+ */
+type SimilarityAnalysis = {
+  readonly score: number; // 0.0 to 1.0
+  readonly error: VError; // The validation error for this alternative
+  readonly diagnostics: string; // Human-readable explanation of what went wrong
+};
+
+/**
+ * Calculate similarity score between a value and a schema.
+ * Used to find the "closest match" when union validation fails.
+ *
+ * Scoring strategy:
+ * - Primitive type mismatch: 0.0 (completely wrong type)
+ * - Object: ratio of matching properties to total properties
+ * - Array: 0.5 if value is array, 0.0 otherwise
+ * - Literal: 1.0 if same type, 0.0 otherwise
+ * - Complex types: recursive similarity calculation
+ */
+function calculateSimilarity(
+  bc: any[],
+  value: unknown,
+  depth: number,
+): SimilarityAnalysis {
+  // Use validateWithResult to get the error
+  const error = validateWithResult(bc, value, [], depth);
+
+  // If validation succeeded, this shouldn't be called (bug)
+  if (!error) {
+    return {
+      score: 1.0,
+      error: createVError("", "validation succeeded"),
+      diagnostics: "value matches schema",
+    };
+  }
+
+  const op = bc[0];
+
+  // Primitive type checks
+  if (op === Op.STRING) {
+    if (typeof value === "string") {
+      // String type matches but validation failed (shouldn't happen for plain STRING)
+      return { score: 1.0, error, diagnostics: "string type matches" };
+    }
+    return {
+      score: 0.0,
+      error,
+      diagnostics: `expected string, got ${typeof value}`,
+    };
+  }
+
+  if (op === Op.NUMBER) {
+    if (typeof value === "number") {
+      return { score: 1.0, error, diagnostics: "number type matches" };
+    }
+    return {
+      score: 0.0,
+      error,
+      diagnostics: `expected number, got ${typeof value}`,
+    };
+  }
+
+  if (op === Op.BOOLEAN) {
+    if (typeof value === "boolean") {
+      return { score: 1.0, error, diagnostics: "boolean type matches" };
+    }
+    return {
+      score: 0.0,
+      error,
+      diagnostics: `expected boolean, got ${typeof value}`,
+    };
+  }
+
+  if (op === Op.NULL) {
+    if (value === null) {
+      return { score: 1.0, error, diagnostics: "null matches" };
+    }
+    return { score: 0.0, error, diagnostics: "expected null" };
+  }
+
+  if (op === Op.UNDEFINED) {
+    if (value === undefined) {
+      return { score: 1.0, error, diagnostics: "undefined matches" };
+    }
+    return { score: 0.0, error, diagnostics: "expected undefined" };
+  }
+
+  if (op === Op.LITERAL) {
+    const lit = bc[1];
+    if (typeof value === typeof lit) {
+      return {
+        score: 0.8,
+        error,
+        diagnostics: `expected literal ${JSON.stringify(lit)}, got ${
+          JSON.stringify(value)
+        }`,
+      };
+    }
+    return {
+      score: 0.0,
+      error,
+      diagnostics: `expected ${typeof lit}, got ${typeof value}`,
+    };
+  }
+
+  if (op === Op.ARRAY) {
+    if (!Array.isArray(value)) {
+      return { score: 0.0, error, diagnostics: "expected array" };
+    }
+    // Value is an array, so partial match
+    return { score: 0.5, error, diagnostics: "array type matches" };
+  }
+
+  if (op === Op.TUPLE) {
+    const expectedLen = bc[1] as number;
+    if (!Array.isArray(value)) {
+      return { score: 0.0, error, diagnostics: `expected tuple[${expectedLen}]` };
+    }
+    if (value.length !== expectedLen) {
+      return {
+        score: 0.3,
+        error,
+        diagnostics: `expected tuple length ${expectedLen}, got ${value.length}`,
+      };
+    }
+    return { score: 0.6, error, diagnostics: "tuple length matches" };
+  }
+
+  if (op === Op.OBJECT) {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      return { score: 0.0, error, diagnostics: "expected object" };
+    }
+
+    // Calculate property-level similarity
+    const count = bc[1] as number;
+    const hasStrictFlag = bc[2] === 0 || bc[2] === 1;
+    let idx = hasStrictFlag ? 3 : 2;
+
+    let totalProps = 0;
+    let matchingPoints = 0; // Use points instead of count for weighted scoring
+    const missingProps: string[] = [];
+    const invalidProps: string[] = [];
+
+    for (let i = 0; i < count; i++) {
+      const marker = bc[idx++];
+      if (marker !== Op.PROPERTY) break;
+      const name = bc[idx++];
+      const optional = bc[idx++] === 1;
+      const propType = bc[idx++];
+
+      totalProps++;
+      const hasProp = Object.prototype.hasOwnProperty.call(value as object, name);
+
+      if (!hasProp) {
+        if (!optional) {
+          missingProps.push(name);
+          // Missing required property - user forgot to include it
+          matchingPoints += 0.1;
+        } else {
+          // Optional property missing is perfectly fine
+          matchingPoints += 1.0;
+        }
+      } else {
+        // Property exists, check if it validates
+        const propErr = validateWithResult(propType, (value as any)[name], [], depth + 1);
+        if (!propErr) {
+          // Perfect match
+          matchingPoints += 1.0;
+        } else {
+          // Property exists but wrong type - credit for right structure, penalty for wrong type
+          invalidProps.push(name);
+          matchingPoints += 0.4;
+        }
+      }
+    }
+
+    // Use raw matching points plus a small bonus for high percentage
+    // This prevents favoring schemas with fewer properties
+    const percentageMatch = totalProps > 0 ? matchingPoints / totalProps : 0.5;
+    const score = matchingPoints + (percentageMatch * 0.5);
+
+    const diagnosticParts: string[] = [];
+    if (missingProps.length > 0) {
+      diagnosticParts.push(
+        `missing ${missingProps.length} required ${
+          missingProps.length === 1 ? "property" : "properties"
+        }: ${missingProps.join(", ")}`,
+      );
+    }
+    if (invalidProps.length > 0) {
+      diagnosticParts.push(
+        `invalid ${invalidProps.length} ${
+          invalidProps.length === 1 ? "property" : "properties"
+        }: ${invalidProps.join(", ")}`,
+      );
+    }
+
+    const diagnostics = diagnosticParts.length > 0
+      ? diagnosticParts.join("; ")
+      : "object structure mismatch";
+
+    return { score, error, diagnostics };
+  }
+
+  if (op === Op.READONLY) {
+    const inner = getInnerSchema(bc);
+    return calculateSimilarity(inner, value, depth + 1);
+  }
+
+  if (op === Op.BRAND) {
+    const inner = getInnerSchema(bc);
+    return calculateSimilarity(inner, value, depth + 1);
+  }
+
+  // For other types, return low similarity
+  return { score: 0.1, error, diagnostics: "complex type mismatch" };
+}
+
 function validateUnion(
   bc: any[],
   value: unknown,
   pathSegments: PathSegment[],
   depth: number,
 ): VError | null {
-  // Optimized: use Result-based validation instead of try/catch
+  // Try all alternatives and track the best match
   const n = bc[1] as number;
+  let bestMatch: SimilarityAnalysis | null = null;
+
   for (let i = 0; i < n; i++) {
     const err = validateWithResult(bc[2 + i], value, pathSegments, depth + 1);
     if (!err) return null; // Success: one alternative matched
+
+    // Calculate similarity for this failed alternative
+    const similarity = calculateSimilarity(bc[2 + i], value, depth + 1);
+
+    if (!bestMatch || similarity.score > bestMatch.score) {
+      bestMatch = similarity;
+    }
   }
+
+  // Generate enhanced error message with best match diagnostics
+  if (bestMatch && bestMatch.score >= 0.2) {
+    // If we found a reasonably close match, include diagnostics
+    return createVError(
+      buildPath(pathSegments),
+      `no union alternative matched. Closest match: ${bestMatch.diagnostics}`,
+    );
+  }
+
+  // Fallback to generic message if no good match
   return createVError(buildPath(pathSegments), `no union alternative matched`);
 }
 
@@ -1388,9 +1632,10 @@ function collectErrors(
     })
     .with(Op.UNION, () => {
       // For unions with aggregation, we try all alternatives and report if NONE match
-      // This is different from the short-circuit version
+      // Use similarity scoring to provide helpful diagnostics
       const n = bc[1] as number;
       let anyMatched = false;
+      let bestMatch: SimilarityAnalysis | null = null;
 
       for (let i = 0; i < n; i++) {
         const alternativeErrors: ValidationError[] = [];
@@ -1406,12 +1651,23 @@ function collectErrors(
           anyMatched = true;
           break; // One alternative matched, union is valid
         }
+
+        // Calculate similarity for failed alternative
+        const similarity = calculateSimilarity(bc[2 + i], value, depth + 1);
+        if (!bestMatch || similarity.score > bestMatch.score) {
+          bestMatch = similarity;
+        }
       }
 
       if (!anyMatched) {
+        // Include diagnostics if we found a reasonably close match
+        const message = bestMatch && bestMatch.score >= 0.2
+          ? `no union alternative matched. Closest match: ${bestMatch.diagnostics}`
+          : `no union alternative matched`;
+
         errors.push({
           path: buildPath(pathSegments),
-          message: `no union alternative matched`,
+          message,
         });
       }
     })

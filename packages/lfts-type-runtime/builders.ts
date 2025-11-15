@@ -14,7 +14,9 @@ import {
   ObjectType,
   UnionType,
   DUnionType,
+  createTypeObject,
 } from "./type-object.ts";
+import { Op } from "../lfts-type-spec/src/mod.ts";
 
 // ============================================================================
 // Primitive Type Builders
@@ -263,6 +265,218 @@ export const t = {
     // For now, return empty object with non-strict mode
     // Future: enhance validation to check all values match valueType
     return ObjectType.fromProperties([], false);
+  },
+
+  // ============================================================================
+  // Convenience Methods (Phase 2.2: v0.12.0)
+  // ============================================================================
+
+  /**
+   * Email string type (convenience method).
+   *
+   * Shorthand for `t.string().email()`.
+   *
+   * @example
+   * ```ts
+   * const User$ = t.object({
+   *   email: t.email(),
+   *   name: t.string(),
+   * });
+   * ```
+   */
+  email(): StringType {
+    return new StringType().email();
+  },
+
+  /**
+   * URL string type (convenience method).
+   *
+   * Shorthand for `t.string().url()`.
+   *
+   * @example
+   * ```ts
+   * const Link$ = t.object({
+   *   href: t.url(),
+   *   title: t.string(),
+   * });
+   * ```
+   */
+  url(): StringType {
+    return new StringType().url();
+  },
+
+  /**
+   * UUID string type (convenience method).
+   *
+   * Validates UUID format (8-4-4-4-12 hex digits).
+   *
+   * @example
+   * ```ts
+   * const Entity$ = t.object({
+   *   id: t.uuid(),
+   *   name: t.string(),
+   * });
+   * ```
+   */
+  uuid(): StringType {
+    return new StringType().pattern(
+      "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    );
+  },
+
+  /**
+   * Positive number type (convenience method).
+   *
+   * Shorthand for `t.number().positive()`.
+   *
+   * @example
+   * ```ts
+   * const Product$ = t.object({
+   *   price: t.positiveNumber(),
+   *   quantity: t.positiveInteger(),
+   * });
+   * ```
+   */
+  positiveNumber(): NumberType {
+    return new NumberType().positive();
+  },
+
+  /**
+   * Positive integer type (convenience method).
+   *
+   * Creates a positive integer constraint.
+   * Note: Due to refinement chaining limitations, this creates the bytecode directly.
+   *
+   * @example
+   * ```ts
+   * const Pagination$ = t.object({
+   *   page: t.positiveInteger(),
+   *   limit: t.positiveInteger(),
+   * });
+   * ```
+   */
+  positiveInteger(): Type {
+    // Create nested refinements: integer(positive(number))
+    const base = new NumberType().bc;
+    const withPositive = [Op.REFINE_POSITIVE, base];
+    const withInteger = [Op.REFINE_INTEGER, withPositive];
+    return createTypeObject(withInteger);
+  },
+
+  /**
+   * Integer type (convenience method).
+   *
+   * Shorthand for `t.number().integer()`.
+   *
+   * @example
+   * ```ts
+   * const Counter$ = t.object({
+   *   count: t.integer(),
+   * });
+   * ```
+   */
+  integer(): NumberType {
+    return new NumberType().integer();
+  },
+
+  /**
+   * Non-empty array type (convenience method).
+   *
+   * Shorthand for `t.array(elementType).nonEmpty()`.
+   *
+   * @example
+   * ```ts
+   * const TodoList$ = t.object({
+   *   tasks: t.nonEmptyArray(t.string()),
+   * });
+   * ```
+   */
+  nonEmptyArray<T>(element: Type<T>): Type {
+    return new ArrayType(element).nonEmpty();
+  },
+
+  /**
+   * String enum type (convenience method).
+   *
+   * Creates a union of string literals from an array.
+   *
+   * @example
+   * ```ts
+   * const Status$ = t.stringEnum(["active", "inactive", "pending"]);
+   * // Equivalent to: t.union(t.literal("active"), t.literal("inactive"), t.literal("pending"))
+   * ```
+   */
+  stringEnum<const T extends readonly string[]>(
+    values: T
+  ): UnionType<T[number]> {
+    const alternatives = values.map((v) => new LiteralType(v));
+    return new UnionType(alternatives);
+  },
+
+  /**
+   * Number enum type (convenience method).
+   *
+   * Creates a union of number literals from an array.
+   *
+   * @example
+   * ```ts
+   * const Priority$ = t.numberEnum([1, 2, 3, 4, 5]);
+   * // Equivalent to: t.union(t.literal(1), t.literal(2), ...)
+   * ```
+   */
+  numberEnum<const T extends readonly number[]>(
+    values: T
+  ): UnionType<T[number]> {
+    const alternatives = values.map((v) => new LiteralType(v));
+    return new UnionType(alternatives);
+  },
+
+  /**
+   * Boolean enum type (convenience method).
+   *
+   * Creates a union of boolean literals (usually just [true, false], but flexible).
+   *
+   * @example
+   * ```ts
+   * const TrueOnly$ = t.booleanEnum([true]);
+   * const Bool$ = t.booleanEnum([true, false]); // Same as t.boolean()
+   * ```
+   */
+  booleanEnum<const T extends readonly boolean[]>(
+    values: T
+  ): UnionType<T[number]> {
+    const alternatives = values.map((v) => new LiteralType(v));
+    return new UnionType(alternatives);
+  },
+
+  /**
+   * Const string type (convenience method).
+   *
+   * Alias for `t.literal()` with better semantics for const strings.
+   *
+   * @example
+   * ```ts
+   * const Kind$ = t.constString("user");
+   * // Same as: t.literal("user")
+   * ```
+   */
+  constString<const T extends string>(value: T): LiteralType<T> {
+    return new LiteralType(value);
+  },
+
+  /**
+   * Const number type (convenience method).
+   *
+   * Alias for `t.literal()` with better semantics for const numbers.
+   *
+   * @example
+   * ```ts
+   * const Version$ = t.constNumber(1);
+   * // Same as: t.literal(1)
+   * ```
+   */
+  constNumber<const T extends number>(value: T): LiteralType<T> {
+    return new LiteralType(value);
   },
 };
 

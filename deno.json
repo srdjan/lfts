@@ -1,6 +1,6 @@
 {
   "name": "lfts",
-  "version": "0.10.0",
+  "version": "0.12.0",
   "imports": {
     "ts-pattern": "npm:ts-pattern@^5.0.0"
   },
@@ -27,6 +27,7 @@
     "build": "deno run -A packages/lfts-type-compiler/src/cli.ts deno_example/src --outDir dist",
     "start": "deno run -A dist/deno_example/src/main.js",
     "test": "deno test -A packages/lfts-type-compiler/src/testing/golden.ts",
+    "test:perf": "deno run -A scripts/perf-ci.ts",
     "release": "deno run -A packages/release/src/release.ts",
     "todo:build": "deno run -A packages/lfts-type-compiler/src/cli.ts todo_api/domain --outDir todo_api/dist",
     "todo:serve": "deno run -A todo_api/main.ts",
