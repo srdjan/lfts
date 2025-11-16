@@ -49,7 +49,7 @@ LFTS v0.10.0 introduces a **Hybrid Type Object System** that wraps bytecode arra
 ### 1. Builder API (Programmatic Construction)
 
 ```typescript
-import { t } from "@lfts/type-runtime";
+import { t } from "./packages/lfts-type-runtime/mod.ts";
 
 // Create schemas programmatically
 const User$ = t.object({
@@ -285,7 +285,7 @@ class RefineNonEmptyType extends Type<string> { kind: "refinement"; }
 The `t` object provides fluent builders for all Type classes:
 
 ```typescript
-import { t } from "@lfts/type-runtime";
+import { t } from "./packages/lfts-type-runtime/mod.ts";
 
 // Primitives
 t.string()                                 // StringType
@@ -334,8 +334,8 @@ t.brand(t.string(), "UserId")              // BrandType<string & {__brand: "User
 ### Raw Bytecode Arrays Still Work
 
 ```typescript
-import { Op } from "@lfts/type-spec";
-import { validate, validateSafe, introspect } from "@lfts/type-runtime";
+import { Op } from "./packages/lfts-type-spec/src/mod.ts";
+import { validate, validateSafe, introspect } from "./packages/lfts-type-runtime/mod.ts";
 
 // Pre-v0.10.0 style: Raw bytecode arrays
 const schema = [Op.STRING];
@@ -361,46 +361,6 @@ validate(User$, data);                     // Type object
 validate([Op.STRING], "test");             // Raw bytecode
 ```
 
-## Migration Guide
-
-### From Raw Bytecode (Pre-v0.10.0)
-
-**Before:**
-```typescript
-import { Op } from "@lfts/type-spec";
-import { validate } from "@lfts/type-runtime";
-
-const User$ = [
-  Op.OBJECT, 2, 0,
-  Op.PROPERTY, "id", 0, [Op.STRING],
-  Op.PROPERTY, "age", 0, [Op.NUMBER],
-];
-
-validate(User$, data);
-```
-
-**After (Option 1: Schema-Root Pattern):**
-```typescript
-// types.ts
-export type User = { id: string; age: number };
-
-// types.schema.ts
-import type { User } from "./types.ts";
-export type UserSchema = User;             // Compiler generates User$
-```
-
-**After (Option 2: Builder API):**
-```typescript
-import { t } from "@lfts/type-runtime";
-
-const User$ = t.object({
-  id: t.string(),
-  age: t.number(),
-});
-
-User$.validate(data);                      // Method API
-```
-
 ## Known Limitations
 
 ### Refinement Chaining (TypeScript Limitation)
@@ -420,7 +380,7 @@ const Username$ = t.string().minLength(3).maxLength(20);
 **Option 1: Manual composition (Recommended)**
 ```typescript
 // Create a refined type using helper functions
-import { RefineMinLengthType, RefineMaxLengthType } from "@lfts/type-runtime/type-object";
+import { RefineMinLengthType, RefineMaxLengthType } from "./packages/lfts-type-runtime/type-object.ts";
 
 const Username$ = new RefineMaxLengthType(
   new RefineMinLengthType(
@@ -440,7 +400,7 @@ const Username$ = t.string().minLength(3);  // ✅ Works
 
 **Option 3: Direct bytecode construction**
 ```typescript
-import { enc } from "@lfts/type-spec";
+import { enc } from "./packages/lfts-type-spec/src/mod.ts";
 
 const Username$ = createTypeObject(
   enc.refine.maxLength(

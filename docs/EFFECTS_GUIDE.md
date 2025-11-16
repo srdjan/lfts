@@ -326,7 +326,7 @@ interface StoragePort {
 For runtime validation, create port schemas using `enc.port()`:
 
 ```typescript
-import { enc } from "@lfts/type-spec";
+import { enc } from "./packages/lfts-type-spec/src/mod.ts";
 
 const StoragePort$ = enc.port("StoragePort", [
   {
@@ -347,7 +347,7 @@ const StoragePort$ = enc.port("StoragePort", [
 Use `validatePort()` to verify implementations at runtime:
 
 ```typescript
-import { validatePort } from "@lfts/type-runtime";
+import { validatePort } from "./packages/lfts-type-runtime/mod.ts";
 
 // Create implementation
 const memoryStorage: StoragePort = {
@@ -643,94 +643,6 @@ If you prefer manual handling, you can disable LFP1030 in `lfts.config.json`:
   }
 }
 ```
-
----
-
-## Migration Guide
-
-### From Manual Promise Handling
-
-**Before:**
-```typescript
-async function loadUser(id: number): Promise<Result<User, Error>> {
-  try {
-    const user = await db.findUser(id);
-    if (!user) {
-      return Result.err("not_found");
-    }
-    return Result.ok(user);
-  } catch (err) {
-    return Result.err("database_error");
-  }
-}
-```
-
-**After:**
-```typescript
-async function loadUser(id: number): Promise<Result<User, Error>> {
-  return AsyncResult.try(
-    async () => {
-      const user = await db.findUser(id);
-      if (!user) throw new Error("not_found");
-      return user;
-    },
-    (err) => err.message === "not_found" ? "not_found" : "database_error"
-  );
-}
-```
-
-### From Callback Hell
-
-**Before:**
-```typescript
-function processUser(id: number, callback: (err: Error | null, result?: Data) => void) {
-  loadUser(id, (err1, user) => {
-    if (err1) return callback(err1);
-    loadPosts(user.id, (err2, posts) => {
-      if (err2) return callback(err2);
-      enrichData(posts, (err3, data) => {
-        if (err3) return callback(err3);
-        callback(null, data);
-      });
-    });
-  });
-}
-```
-
-**After:**
-```typescript
-async function processUser(id: number): Promise<Result<Data, Error>> {
-  return AsyncResult.andThen(
-    loadUser(id),
-    (user) => AsyncResult.andThen(
-      loadPosts(user.id),
-      (posts) => enrichData(posts)
-    )
-  );
-}
-```
-
-### From Promise.all()
-
-**Before:**
-```typescript
-async function loadAll(ids: number[]): Promise<User[]> {
-  try {
-    return await Promise.all(ids.map(id => loadUser(id)));
-  } catch (err) {
-    throw new Error(`Failed to load users: ${err}`);
-  }
-}
-```
-
-**After:**
-```typescript
-async function loadAll(ids: number[]): Promise<Result<User[], LoadError>> {
-  return AsyncResult.all(ids.map(id => loadUser(id)));
-}
-```
-
----
 
 ## Best Practices
 

@@ -120,9 +120,31 @@ All essential LFTS enforcement rules are functional:
 - **Utility types (v0.8.0)**: Partial, Required, Pick, Omit, Record, Readonly
 - **Const enums (v0.8.0)**: Numeric and string const enums expand to literal unions
 
-## Runtime Performance and Features (v0.2.0 - v0.6.0)
+## Runtime Performance and Features (v0.2.0 - v0.9.0)
 
-The LFTS runtime validator has been optimized for high-performance validation and includes developer-friendly introspection capabilities:
+See [packages/lfts-type-runtime/README.md](packages/lfts-type-runtime/README.md)
+for the canonical `mod.ts` API reference. This section highlights the release
+history and how the current **v0.9.0** runtime is composed.
+
+### Core Surface Snapshot (v0.9.0)
+
+- **Functional results:** `Result`, `Option`, `AsyncResult`
+- **Validation helpers:** `validate`, `validateSafe`, `validateAll`, `validateWithResult`
+- **Serialization & branching:** `serialize`, `match`, plus builders + introspection helpers (`typeOf`, `t`, `introspect`, `inspect`, `withMetadata`)
+- **Port helpers:** `validatePort`, `getPortName`, `getPortMethods` form the runtime contract for Light-FP ports/capabilities
+
+### Pipeline Extraction (v0.9.0, optional module)
+
+Pipeline helpers are now a separate optional module and are **not re-exported** by `mod.ts`.
+
+```ts
+import { pipe, asPipe, PipelineExecutionError } from "./packages/lfts-type-runtime/pipeline.ts";
+```
+
+- `pipe()` + `asPipe()` remain the TC39-style pipeline shim while `.run()` throws `PipelineExecutionError` if a stage yields `Result.err`.
+- `.runResult()` stays exception-free; `.inspect()` exposes per-stage snapshots for observability.
+- Existing imports from `mod.ts` must migrate to the explicit subpath (breaking change recorded in [CHANGELOG.md](CHANGELOG.md)).
+- Treat this module as optional/advanced; it only lands in bundles if you import it directly.
 
 ### Optimizations Implemented
 

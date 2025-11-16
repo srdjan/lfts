@@ -31,7 +31,7 @@ import {
   withFallback,
   withTimeout,
   type NetworkError,
-} from "@lfts/runtime/distributed";
+} from "./packages/lfts-type-runtime/distributed.ts";
 ```
 
 **Zero external dependencies** - uses native `fetch` and `AbortController`.
@@ -553,58 +553,6 @@ const result = await httpGet<User>(url, UserSchema);
 
 // ✗ Bad: Skip validation, assume correct format
 const result = await fetch(url).then(r => r.json()); // Unsafe
-```
-
-## Migration from Other Frameworks
-
-### From gRPC
-
-```typescript
-// gRPC (before)
-const client = new UserServiceClient(address);
-try {
-  const user = await client.getUser({ id: 123 });
-} catch (error) {
-  // Exception handling
-}
-
-// LFTS (after)
-const userService = createUserServiceAdapter(baseUrl);
-const result = await userService.getUser(123);
-
-if (result.ok) {
-  const user = result.value;
-} else {
-  // Explicit error handling
-}
-```
-
-### From fetch
-
-```typescript
-// fetch (before)
-try {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const data = await response.json();
-  return data; // No validation
-} catch (error) {
-  // Network errors, parse errors, etc.
-}
-
-// LFTS (after)
-const result = await httpGet<User>(url, UserSchema);
-
-if (result.ok) {
-  return result.value; // Validated
-} else {
-  // Explicit error type
-  match(result.error.type, {
-    timeout: ...,
-    http_error: ...,
-    serialization_error: ...,
-  });
-}
 ```
 
 ## Troubleshooting

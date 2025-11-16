@@ -1,6 +1,6 @@
 # LFTS CLI
 
-Command-line tools for the Light Functional TypeScript runtime.
+Command-line tools for the Light-FP TypeScript runtime.
 
 ## Installation
 

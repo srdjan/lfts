@@ -20,7 +20,7 @@ A hybrid architecture that wraps bytecode arrays with a rich reflection API whil
 
 **Example - Builder API:**
 ```typescript
-import { t } from "@lfts/type-runtime";
+import { t } from "./packages/lfts-type-runtime/mod.ts";
 
 const User$ = t.object({
   id: t.string().pattern("^usr_[a-z0-9]+$"),
@@ -217,6 +217,13 @@ deno run -A packages/lfts-type-runtime/distributed-example.ts
 # Working example with real API calls
 deno run -A examples/10-distributed-execution/main.ts
 ```
+
+### Changed
+
+- **Pipeline extraction (optional module):** `pipe`, `asPipe`, and `PipelineExecutionError` now live exclusively in `packages/lfts-type-runtime/pipeline.ts`. Import explicitly:
+  `import { pipe, asPipe, PipelineExecutionError } from "./packages/lfts-type-runtime/pipeline.ts";`
+- **Breaking change:** `packages/lfts-type-runtime/mod.ts` no longer re-exports pipeline helpers. Update any `mod.ts` imports to the subpath above before upgrading.
+- Documentation updated (`README.md`, `CLAUDE.md`, `docs/FEATURES.md`) to clarify that Pipeline is optional/advanced and not part of the core primitive surface.
 
 ### Performance
 

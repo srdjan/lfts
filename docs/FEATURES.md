@@ -4,6 +4,10 @@ This document describes all features that have been implemented in the LFTS
 runtime and compiler. For future planned features, see
 [FUTURE_DIRECTION.md](FUTURE_DIRECTION.md).
 
+> Canonical Light-FP syntax/rule details live in [LANG-SPEC.md](LANG-SPEC.md);
+> this file summarizes implementations and links back to the spec where
+> needed.
+
 ---
 
 ## Type Object System (v0.10.0)
@@ -22,7 +26,7 @@ A hybrid architecture that wraps bytecode arrays with a rich reflection API whil
 
 **Example:**
 ```typescript
-import { t } from "@lfts/type-runtime";
+import { t } from "./packages/lfts-type-runtime/mod.ts";
 
 // Builder API - programmatic construction
 const User$ = t.object({
@@ -89,7 +93,11 @@ type NetworkError =
 
 **Example:**
 ```typescript
-import { httpGet, httpPost, type NetworkError } from "lfts-runtime/distributed";
+import {
+  httpGet,
+  httpPost,
+  type NetworkError,
+} from "./packages/lfts-type-runtime/distributed.ts";
 
 const result = await httpGet<User>(
   "https://api.example.com/users/123",
@@ -402,7 +410,7 @@ full combinator APIs.
 **Example:**
 
 ```ts
-import { Option, Result } from "lfts-runtime";
+import { Option, Result } from "./packages/lfts-type-runtime/mod.ts";
 
 // Result combinators
 const result = Result.andThen(
@@ -444,7 +452,7 @@ schema metadata and success/failure callbacks.
 **Example:**
 
 ```ts
-import { inspect, withMetadata } from "lfts-runtime";
+import { inspect, withMetadata } from "./packages/lfts-type-runtime/mod.ts";
 
 // Attach metadata to schema
 const OrderSchema = withMetadata(orderBytecode, {
@@ -510,7 +518,7 @@ Direct-style effect handling for `Promise<Result<T, E>>` operations using AsyncR
 **Example:**
 
 ```ts
-import { AsyncResult, Result } from "lfts-runtime";
+import { AsyncResult, Result } from "./packages/lfts-type-runtime/mod.ts";
 
 // Wrap exception-throwing async code
 const result = await AsyncResult.try(
@@ -545,7 +553,8 @@ Runtime validation of port/capability implementations for dependency injection a
 **Example:**
 
 ```ts
-import { validatePort, enc } from "lfts-runtime";
+import { validatePort } from "./packages/lfts-type-runtime/mod.ts";
+import { enc } from "./packages/lfts-type-spec/src/mod.ts";
 
 // Define port schema
 const StoragePort$ = enc.port("StoragePort", [
@@ -581,38 +590,36 @@ The compiler provides helpful warnings when it detects manual Promise<Result> ha
 
 ---
 
-### 5. Pipeline Composition Shim (v0.4.0)
+### 5. Pipeline Composition Shim (v0.4.0, extracted in v0.9.0)
 
-**Status:** ✅ Fully implemented
+**Status:** ✅ Fully implemented (optional/advanced module)
 
-Runtime-only pipeline helpers that model the forthcoming TC39 pipeline operator
-while preserving Light-FP guarantees.
+Pipeline helpers live in `packages/lfts-type-runtime/pipeline.ts` and are **not
+re-exported** by `mod.ts`. Always import from the subpath:
 
-**APIs:**
+```ts
+import { pipe, asPipe, PipelineExecutionError } from "./packages/lfts-type-runtime/pipeline.ts";
+```
 
 - `pipe(initial)` - Begin a deferred pipeline around a value or `Result`
-- `asPipe(fn, options?)` - Lift a pure function or method set into a pipeable
-  stage
+- `asPipe(fn, options?)` - Lift a pure function or method set into a pipeable stage
 - `PipelineExecutionError` - Thrown by `run()` when a stage yields `Result.err`
-- `token.run()` / `token.runResult()` - Evaluate pipelines in value or Result
-  mode
+- `token.run()` / `token.runResult()` - Evaluate pipelines in value or Result mode
 - `token.inspect()` - Retrieve per-stage diagnostics (label, status, duration)
 
 **Features:**
 
-- Short-circuits on the first error, matching the future bytecode executor
-  design
+- Short-circuits on the first error, matching the future bytecode executor design
 - Supports nested pipelines and async stages without shared mutable state
-- Automatic mode switching: pure value pipelines adopt Result semantics when
-  encountering stages marked `{ expect: "result" }`
+- Automatic mode switching: pure value pipelines adopt Result semantics when encountering stages marked `{ expect: "result" }`
 - Stage metadata recorded for future observability integrations
-- Compiler policy (`LFP1030`) reserves bitwise `|` for pipeline usage while
-  rejecting other bitwise expressions
+- Compiler policy (`LFP1030`) reserves bitwise `|` for pipeline usage while rejecting other bitwise expressions
 
 **Example:**
 
 ```ts
-import { asPipe, pipe, Result } from "lfts-runtime";
+import { asPipe, pipe, PipelineExecutionError } from "./packages/lfts-type-runtime/pipeline.ts";
+import { Result } from "./packages/lfts-type-runtime/mod.ts";
 
 const ensureUser = asPipe(
   (input: unknown) =>
@@ -646,14 +653,14 @@ that compile to validation bytecode.
 **Nominal typing (compile-time only):**
 
 ```ts
-import type { Nominal } from "lfts-runtime";
+import type { Nominal } from "./packages/lfts-type-runtime/mod.ts";
 type UserId = string & Nominal;
 ```
 
 **String refinements:**
 
 ```ts
-import type { Email, MaxLength, MinLength, Pattern, Url } from "lfts-runtime";
+import type { Email, MaxLength, MinLength, Pattern, Url } from "./packages/lfts-type-runtime/mod.ts";
 
 type UserEmail = string & Email;
 type WebsiteUrl = string & Url;
@@ -664,7 +671,7 @@ type Username = string & MinLength<3> & MaxLength<20>;
 **Numeric refinements:**
 
 ```ts
-import type { Integer, Max, Min, Range } from "lfts-runtime";
+import type { Integer, Max, Min, Range } from "./packages/lfts-type-runtime/mod.ts";
 
 type Age = number & Min<0> & Max<120>;
 type Score = number & Range<0, 100>;
@@ -674,7 +681,7 @@ type Count = number & Integer & Min<0>;
 **Array refinements:**
 
 ```ts
-import type { MaxItems, MinItems } from "lfts-runtime";
+import type { MaxItems, MinItems } from "./packages/lfts-type-runtime/mod.ts";
 
 type NonEmptyArray<T> = T[] & MinItems<1>;
 type ShortList<T> = T[] & MaxItems<10>;
@@ -723,7 +730,7 @@ validateAll(schema, value, maxErrors?)
 **Example:**
 
 ```ts
-import { validateAll } from "lfts-runtime";
+import { validateAll } from "./packages/lfts-type-runtime/mod.ts";
 
 // Collect all errors (default max: 100)
 const result = validateAll(User$, data);
@@ -806,7 +813,7 @@ Optional strict mode to reject unknown object properties.
 **Usage:**
 
 ```ts
-import { enc } from "lfts-type-spec";
+import { enc } from "./packages/lfts-type-spec/src/mod.ts";
 
 // Strict mode: reject excess properties
 const schema = enc.obj([

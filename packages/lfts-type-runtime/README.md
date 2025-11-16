@@ -1,6 +1,6 @@
 # LFTS Type Runtime
 
-Light Functional TypeScript runtime validator with bytecode-based validation.
+Light-FP TypeScript runtime validator with bytecode-based validation.
 
 ## Overview
 
@@ -12,7 +12,7 @@ The LFTS runtime provides high-performance validation of values against bytecode
 - **Result types** - Functional error handling with `Result<T, E>`
 - **Pattern matching** - Exhaustive ADT matching with `match()`
 - **Introspection** - Runtime schema examination via `introspect()`
-- **Port validation** - Validate effect interfaces at runtime
+- **Port validation helpers** - `validatePort()`, `getPortName()`, `getPortMethods()` keep ports/capabilities honest
 
 ## Simplicity Charter
 
@@ -28,10 +28,14 @@ The LFTS runtime follows strict principles to maintain simplicity and predictabi
 - Port helpers: `getPortName()`, `getPortMethods()`
 
 **Optional helpers (separate modules):**
-- **Pipeline** (`./pipeline.ts`) - Experimental async pipeline composition
-  - Import explicitly: `import { pipe, asPipe } from "./pipeline.ts"`
+- **Pipeline** (`./pipeline.ts`) - Optional async pipeline composition (not exported by `mod.ts`)
+  - Repo-root import: `import { pipe, asPipe, PipelineExecutionError } from "./packages/lfts-type-runtime/pipeline.ts"`
+  - Local import (inside this package): `import { pipe, asPipe, PipelineExecutionError } from "./pipeline.ts"`
+  - `.run()` throws `PipelineExecutionError` on `Result.err`, `.runResult()` stays exception-free
   - Not included in bundles unless used (tree-shaking)
-  - Marked as experimental/optional
+
+**Breaking note (v0.9.0):** Pipeline helpers were removed from `mod.ts` exports.
+Update any `mod.ts` imports to the explicit subpath before upgrading.
 
 **AsyncResult** - Coming soon as separate module
   - Async effect composition helpers
@@ -231,7 +235,7 @@ if (info.kind === "object") {
 ### Optional Pipeline (Experimental)
 
 ```typescript
-import { pipe, asPipe } from "./pipeline.ts";
+import { pipe, asPipe, PipelineExecutionError } from "./pipeline.ts";
 
 const upper = asPipe((s: string) => s.toUpperCase());
 const exclaim = asPipe((s: string) => s + "!");
@@ -292,24 +296,6 @@ packages/lfts-type-runtime/
 3. **Direct-style programming** - Plain functions, not monads
 4. **Composable primitives** - Build helpers from basics
 5. **Tree-shakeable** - Pay only for what you use
-
-## Migration Guide
-
-### From Earlier Versions
-
-If you were using Pipeline from `mod.ts`:
-
-**Before:**
-```typescript
-import { pipe, asPipe } from "./mod.ts";
-```
-
-**After:**
-```typescript
-import { pipe, asPipe } from "./pipeline.ts";
-```
-
-All core validation APIs remain unchanged.
 
 ## Contributing
 

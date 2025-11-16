@@ -61,7 +61,7 @@ async function main() {
 
 function helpCommand(_args: any) {
   console.log(`
-LFTS CLI - Light Functional TypeScript Tooling
+LFTS CLI - Light-FP TypeScript Tooling
 
 Usage:
   lfts <command> [options]

@@ -1,9 +1,9 @@
 # Light-FP Type Compiler (Deno-only)
 
 This is an experimental prototype of a minimal Light‑FP TypeScript compiler
-that:
+that ships **v0.9.0** of the toolchain and runtime:
 
-- Enforces the **Light Functional** subset (no OOP, no decorators, no `this`, no
+- Enforces the **Light-FP** subset (no OOP, no decorators, no `this`, no
   mapped/conditional types).
 - Compiles `typeOf<T>()` sites into **Deepkit-compatible bytecode** literals
   (Deno-only build task).
@@ -29,7 +29,73 @@ deno task lint      # lint + check for OOP constructs
 ```
 
 If any **policy or gate** violation is found, `deno task build` exits non‑zero
-with diagnostics.
+with diagnostics. For an end-to-end walkthrough (project layout, schema files,
+generated artifacts), read [docs/TUTORIAL.md](docs/TUTORIAL.md).
+
+## Documentation Map
+
+Use this map to jump to the canonical source for each topic (to avoid
+duplicate descriptions scattered across docs):
+
+- **Language & Compiler**
+  - [docs/LANG-SPEC.md](docs/LANG-SPEC.md) – authoritative Light-FP rules
+  - [docs/FEATURES.md](docs/FEATURES.md) – implemented language/runtime features (references LANG-SPEC for rule details)
+  - [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) – defects tracked at compile time
+  - [docs/VALIDATOR_GAPS.md](docs/VALIDATOR_GAPS.md) – known runtime gaps
+- **Runtime & Performance**
+  - [packages/lfts-type-runtime/README.md](packages/lfts-type-runtime/README.md) – `mod.ts` API, validation, Result/Option/AsyncResult docs
+  - [docs/BYTECODE_REFERENCE.md](docs/BYTECODE_REFERENCE.md) – bytecode ops, performance notes
+  - [packages/lfts-type-runtime/pipeline.ts](packages/lfts-type-runtime/pipeline.ts) – optional pipeline helpers (see README “Optional Pipeline” section for usage)
+- **Patterns & Guides**
+  - [docs/EFFECTS_GUIDE.md](docs/EFFECTS_GUIDE.md) – AsyncResult, ports, effect discipline
+  - [docs/DISTRIBUTED_GUIDE.md](docs/DISTRIBUTED_GUIDE.md) – distributed helpers module
+  - [docs/SCHEMA_GENERATION.md](docs/SCHEMA_GENERATION.md) – schema-root and compiler emission
+  - [docs/TUTORIAL.md](docs/TUTORIAL.md) – high-level getting started guide
+- **Development**
+  - [CONTRIBUTING.md](CONTRIBUTING.md) – Light-FP etiquette + workflow
+  - [docs/CLI.md](docs/CLI.md) – CLI usage and flags
+  - [CHANGELOG.md](CHANGELOG.md) – release history + migration guidance
+  - [docs/FUTURE_DIRECTION.md](docs/FUTURE_DIRECTION.md) – roadmap and open bets
+
+## Core Runtime Surface (mod.ts)
+
+`packages/lfts-type-runtime/mod.ts` is the single public entrypoint for runtime
+APIs. The surface is intentionally narrow:
+
+- **Functional results:** `Result`, `Option`, `AsyncResult` (sync + async error handling)
+- **Validation helpers:** `validate`, `validateSafe`, `validateAll`, `validateWithResult`
+- **Serialization + pattern matching:** `serialize`, `match`
+- **Type + introspection:** `typeOf`, `Type` builders (`t`, `primitives`), `introspect`, `inspect`, `withMetadata`
+- **Port helpers:** `validatePort`, `getPortName`, `getPortMethods` (treat “Port” and “Capability” suffixes as equivalent)
+
+See [packages/lfts-type-runtime/README.md](packages/lfts-type-runtime/README.md)
+for detailed documentation of every export.
+
+## Optional Pipeline Module
+
+Pipeline helpers were extracted in **v0.9.0** into their own optional module.
+They are considered advanced helpers and are **not exported** from `mod.ts`.
+
+```ts
+import {
+  pipe,
+  asPipe,
+  PipelineExecutionError,
+} from "./packages/lfts-type-runtime/pipeline.ts";
+```
+
+- Preferred import form: `import { pipe, asPipe, PipelineExecutionError } from "./packages/lfts-type-runtime/pipeline.ts"`.
+- `pipe()` + `asPipe()` model the TC39 pipeline proposal while preserving Light-FP guarantees.
+- `.run()` throws `PipelineExecutionError` when a stage produces `Result.err`; `.runResult()` stays pure.
+- Existing code that imported pipeline APIs from `mod.ts` must now import from the subpath (breaking change noted in CHANGELOG and CLAUDE.md).
+
+## Ports & Capabilities Terminology
+
+“Port” and “Capability” describe the same concept: pure interfaces that model
+effects at the boundary. Stick to the `@port` discipline, keep implementation
+details in adapters, and validate implementations with
+`validatePort`/`getPortName`/`getPortMethods`. Suffix names with either `Port`
+or `Capability` consistently so diagnostics stay readable.
 
 ## OOP Safeguards
 
@@ -68,14 +134,15 @@ engineering guide.
 
 ```ts
 import {
+  validate,
   typeOf,
   type Nominal,
   type Email,
   type Min,
   type Max,
   type MinLength,
-  type MaxLength
-} from "lfts-runtime";
+  type MaxLength,
+} from "./packages/lfts-type-runtime/mod.ts";
 
 type User = {
   readonly id: string & Nominal;           // Compile-time brand
@@ -101,7 +168,11 @@ LFTS provides optional helpers for building distributed systems using composable
 
 **HTTP Adapters** - Schema-validated HTTP client:
 ```ts
-import { httpGet, httpPost, type NetworkError } from "lfts-runtime/distributed";
+import {
+  httpGet,
+  httpPost,
+  type NetworkError,
+} from "./packages/lfts-type-runtime/distributed.ts";
 
 const result = await httpGet<User>(
   "https://api.example.com/users/123",
@@ -119,7 +190,11 @@ if (result.ok) {
 
 **Resilience Patterns** - Composable fault tolerance:
 ```ts
-import { withRetry, createCircuitBreaker, withFallback } from "lfts-runtime/distributed";
+import {
+  withRetry,
+  createCircuitBreaker,
+  withFallback,
+} from "./packages/lfts-type-runtime/distributed.ts";
 
 // Retry with exponential backoff
 const result = await withRetry(

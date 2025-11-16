@@ -1042,7 +1042,7 @@ const monitoredService = withMetrics(userService, "UserService");
 
 Users can implement these as libraries (no core changes needed):
 
-**1. Network Error Types** (`@lfts/network-errors`, ~1KB)
+**1. Network Error Types** (planned user-land module, ~1KB)
 ```typescript
 export type NetworkError =
   | { type: "timeout"; service: string; ms: number }
@@ -1052,7 +1052,7 @@ export type NetworkError =
   | { type: "serialization_error"; service: string; message: string };
 ```
 
-**2. HTTP Port Adapter** (`@lfts/http-adapter`, ~8KB)
+**2. HTTP Port Adapter** (planned user-land module, ~8KB)
 ```typescript
 export function createHttpPort<P>(
   schema: TypeObject,
@@ -1063,7 +1063,7 @@ export function createHttpPort<P>(
 }
 ```
 
-**3. Resilience Helpers** (`@lfts/resilience`, ~6KB)
+**3. Resilience Helpers** (planned user-land module, ~6KB)
 ```typescript
 export function withRetry<T, E>(...);
 export function withCircuitBreaker<P>(...);
@@ -1071,7 +1071,7 @@ export function withTimeout<T, E>(...);
 export function withFallback<T, E>(...);
 ```
 
-**4. Observability Wrappers** (`@lfts/observability`, ~8KB)
+**4. Observability Wrappers** (planned user-land module, ~8KB)
 ```typescript
 export function withMetrics<P>(...);
 export function withTracing<P>(...);
@@ -1107,11 +1107,11 @@ User-land distributed extensions:
 - Publish starter templates
 
 **Phase 2: Community Libraries** (User-driven)
-- `@lfts/network-errors`: Standard network error ADT
-- `@lfts/http-adapter`: Generate HTTP port implementations
-- `@lfts/resilience`: Retry, circuit breaker, timeout helpers
-- `@lfts/observability`: Metrics, tracing, logging wrappers
-- `@lfts/testing`: Mock port generators, test harness
+- `network-errors`: Standard network error ADT
+- `http-adapter`: Generate HTTP port implementations
+- `resilience`: Retry, circuit breaker, timeout helpers
+- `observability`: Metrics, tracing, logging wrappers
+- `testing`: Mock port generators, test harness
 
 **Phase 3: Optional Advanced Features** (v1.1+, if needed)
 - Service registry for discovery (optional package)
