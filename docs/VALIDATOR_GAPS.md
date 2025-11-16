@@ -1,71 +1,122 @@
-# Standalone Validator — Known Gaps (v0.8.0)
+# Standalone Validator — Known Gaps (v0.9.0)
 
-This document tracks the remaining gaps in the built-in validator relative to a production-ready runtime. It reflects the current Deno runtime shipped with LFTS v0.8.0.
+_Last reviewed: November 16, 2025_
 
-**Recent improvements**
-- ✅ **Refinements**: numeric min/max/integer/range, string length/pattern/email/url, array min/max items.
-- ✅ **Error aggregation**: `validateAll()` collects multiple failures (configurable cap).
-- ✅ **Strict objects**: optional excess-property policy on `enc.obj([...], true)`.
-- ✅ **DUNION fast path**: O(1) discriminant lookup with WeakMap cache.
-- ✅ **Union optimisations**: result-based validation eliminates throw/catch overhead.
-- ✅ **Lazy paths**: only build dotted paths when needed.
+This document tracks the remaining deltas between the shipping LFTS runtime (v0.9.0)
+and the desired “production-ready” validator. It supplements
+[docs/FUTURE_DIRECTION.md](FUTURE_DIRECTION.md) and the release notes by focusing
+specifically on runtime capabilities, ergonomics, and diagnostics.
 
-## Type surface & semantics
-- **No recursive/self-referential types** (e.g., trees, graphs).
-- **No generics** instantiation or type parameter substitution.
-- **No mapped / conditional / template-literal types**.
-- **No index signatures** (e.g., `{[k: string]: T}`) and **no dictionary/object-unknown keys**.
-- **No tuple optional/rest elements** (only fixed-length tuples).
-- **No function types in schemas** (by design; rejected by policy, not supported in runtime).
-- **No `bigint`, `symbol`, `Date`, `Buffer`, or branded-special primitives** beyond `string/number/boolean/null/undefined/literal`.
-- **Readonly** is shallow: runtime treats `READONLY` as pass-through (compile-time only).
+## Recent Improvements (Since v0.8.0)
 
-## Validation constraints & refinements
-- ✅ Numeric refinements: `Op.REFINE_MIN`, `Op.REFINE_MAX`, `Op.REFINE_INTEGER`, `Op.REFINE_PATTERN` (range via min/max nesting).
-- ✅ String refinements: min/max length, regex pattern, email, URL.
-- ✅ Array refinements: min/max items.
-- ❌ Missing refinements: exclusivity (`>`, `<`), multiples, string format families (UUID, ISO dates), array uniqueness and per-index rules.
-- ❌ No composite constraints (`oneOf`, `allOf`, property dependencies).
-- ❌ No brand-aware runtime checks beyond structural `Op.BRAND`.
+- ✅ **Type Object System (v0.10.0 dev branch)** – Builder API, rich
+  introspection, and zero-overhead schema wrappers are implemented and fully
+  documented; legacy bytecode arrays remain supported.
+- ✅ **Pipeline extraction (v0.9.0)** – Optional helper moved to
+  `packages/lfts-type-runtime/pipeline.ts`, keeping the core `mod.ts` surface
+  lean and composable.
+- ✅ **Distributed helpers (v0.9.0)** – HTTP + resilience helpers follow the
+  “composable primitives over layered frameworks” ethos and return
+  `Result<T, NetworkError>` end-to-end.
+- ✅ **Refinements & Aggregation** – Numeric/string refinements, array min/max,
+  and `validateAll()` error aggregation are all stable and documented.
+- ✅ **Performance guardrails** – DUNION caching, lazy error paths, and
+  result-based unions are the default fast path; tree-shaking keeps optional
+  modules out of core bundles.
 
-## Error reporting
-- ✅ `validateAll()` aggregates errors with configurable `maxErrors`.
-- **Union diagnostics** remain generic (“no union alternative matched”) without nearest-match hints.
-- **Paths** include array indices and property names, but **no schema source mapping** (no link back to original `typeOf<T>()` location).
+## Current Gaps
 
-## Performance & ergonomics
-- **Memoization**: DUNION tag maps + BRAND/READONLY wrapper caches exist, but there is no general sub-schema cache or hash-based lookup.
-- **Schema identity**: No stable schema hash for memoised validation/serialization or compatibility checks.
-- **Interop**: No JSON Schema export, no serializer specialisation, no plugin hook architecture.
+### 1. Type Surface & Semantics
 
-## Interop & tooling
-- **No schema registry** or cross-module sharing contract (we inline bytecode at call sites).
-- **No source map for schemas** (see error reporting above).
+- ❌ **Recursive / self-referential schemas** – Cyclic graphs and trees are still
+  unsupported at runtime; compiler forbids them entirely.
+- ❌ **Generics, mapped, conditional, and template literal types** – These
+  constructs remain compile-only and cannot be reified into runtime schemas.
+- ❌ **Index signatures / dictionaries** – `{ [k: string]: T }` and unbounded
+  object keys remain unsupported, partly to avoid prototype-pollution vectors.
+- ❌ **Function types** – Policies still reject function-valued schemas; this is
+  intentional but should be called out whenever users request RPC-like types.
+- ⚠️ **Readonly semantics** – Runtime treats `READONLY` as pass-through (compile
+  time only). Documented in README, but runtime enforcement remains shallow.
 
----
+### 2. Validation Constraints & Refinements
 
-## Suggested next steps
+- ✅ **Available today:** numeric min/max/integer/range, string length/pattern/
+  email/url, array min/max items, structural brands.
+- ❌ **Missing refinements:** exclusive bounds (`>` `<`), multiples, UUID/timezone
+  formats, string pattern families (ISO date, ULID), array uniqueness,
+  per-index tuple rules, and cross-field constraints (`oneOf`, property dependencies).
+- ⚠️ **Composite constraints:** There is no `allOf`/`oneOf` composition at runtime;
+  developers must encode these rules manually via custom ports or post-validators.
+- ⚠️ **Brand-aware runtime checks:** Brands are purely structural; there’s no
+  runtime enforcement beyond shape validation.
 
-### High Priority
-1. **Discriminated union diagnostics**: Provide “best alternative” hints when unions fail.
-2. **Source mapping**: Emit minimal spans from bytecode back to `typeOf<T>()` properties.
-3. **Schema identity**: stable hash / memo cache for repeat validations.
+### 3. Error Reporting & Diagnostics
 
-### Medium Priority
-4. **Recursive & dictionary types**: Extend bytecode/runtime with cycle detection and index signatures.
-5. **Tuple optional/rest elements**: Add bytecode encoding for variadic tuples.
-6. **Advanced refinements**: unique arrays, exclusive bounds, extended string format helpers.
+- ⚠️ **Union diagnostics** – Errors still read “no union alternative matched”
+  without “closest match” hints. Feature is prioritized (see FUTURE_DIRECTION
+  high-priority item #1) but not implemented yet.
+- ⚠️ **Source mapping** – There is no link back to the originating
+  `typeOf<T>()` or `.schema.ts` location, so large schemas are hard to debug.
+- ⚠️ **Path metadata** – Paths include dotted keys and indices, but there is no
+  schema hash or identifier to correlate repeated failures across services.
+- ✅ **Aggregation** – `validateAll()` collects multiple errors with a configurable
+  `maxErrors`, which dramatically improves DX for data ingest workflows.
 
-### Low Priority
-7. **Plugin hooks**: Allow custom validators/refinements to register with runtime.
-8. **Serializer specialisation**: Generate faster encode/serialize paths.
-9. **JSON Schema / OpenAPI export**: Emit metadata for external tooling.
+### 4. Performance, Memory & Observability
 
-### Performance Note
-Recent optimisations already in place:
-- **DUNION**: 40x–1600x faster ADT validation with cached tag map.
-- **UNION**: 2–5x faster through result-based branching.
-- **Lazy paths**: No string concatenation on the happy path.
-- **Wrapper cache**: BRAND/READONLY nodes reuse inner schemas via WeakMap.
+- ✅ **Throughput:** Benchmarked at 8–16M ops/sec for DUNION-heavy workloads and
+  22M ops/sec for cold-path introspection (see `docs/TYPE_OBJECTS.md`).
+- ✅ **Memory:** Type-object wrappers (~48 B per schema) and caches (~24 B per
+  property) are predictable and lazily allocated.
+- ⚠️ **Long-running soak tests:** No automated soak/perf test exists to detect
+  memory leaks when thousands of schemas are validated in-process. Add a
+  stress harness before 1.0.
+- ⚠️ **Schema identity / memoization:** There is still no stable schema hash to
+  cache validation plans or deduplicate serialized forms.
+- ⚠️ **Observability hooks:** `inspect()` exists, but there is no first-class
+  event stream for validation timings or structured failures.
 
-For most use cases the JavaScript implementation is sufficient; consider WASM/FFI specialisation only after closing the medium-priority items above.
+### 5. Tooling & Ecosystem
+
+- ⚠️ **JSON Schema / OpenAPI export:** Not yet available. This limits interop
+  with downstream tooling and swagger-based clients.
+- ⚠️ **Schema registry / cache artifacts:** Compiler emits bytecode inline; there
+  is no `.lfts-cache` story yet (still listed as a future enhancement).
+- ⚠️ **Plugin/refinement hooks:** Runtime cannot register user-defined
+  refinements or encoders, forcing bespoke forks for advanced scenarios.
+- ⚠️ **AsyncResult + pipeline alignment:** `pipeline.ts` still throws
+  `PipelineExecutionError` on `.run()` and lacks the proposed `.runSafe()`.
+- ✅ **Light-FP enforcement:** No OOP constructs, ports/capabilities discipline,
+  and “composable primitives over layered frameworks” remain core design guardrails.
+
+## Prioritized Backlog
+
+| Priority | Gap | Notes / Next Step |
+| --- | --- | --- |
+| **High** | Union diagnostics with “closest match” hints | Needed for DX; influences release readiness. |
+| **High** | Source mapping from bytecode back to schema | Enables actionable errors and tooling. |
+| **High** | Pipeline `.runSafe()` / zero-throw guarantee | Aligns optional module with Result-first philosophy. |
+| **Medium** | Schema identity + memoized validation plans | Unlocks caching and dedup across services. |
+| **Medium** | Advanced refinements (exclusive bounds, UUID, uniqueness) | Frequently requested; easy wins once opcodes exist. |
+| **Medium** | JSON Schema / OpenAPI export | Required for integration with external systems. |
+| **Low** | Plugin/refinement hook architecture | Nice-to-have once high-priority items land. |
+
+## Release Considerations
+
+- **Documentation alignment:** README, CLAUDE, and CHANGELOG already describe
+  the pipeline subpath import. Any other doc referencing `import { pipe } from
+  "./mod.ts"` is now incorrect and must be updated before GA.
+- **Philosophy check:** Distributed helpers, pipeline extraction, and the runtime
+  README consistently reiterate “composable primitives over layered frameworks.”
+  Keep this language in every new guide to avoid regressions.
+- **Upgrade guidance:** Continue pointing users at CHANGELOG + README sections
+  for migration steps (pipeline import, no core API removals). If additional
+  breaking changes arise, append clear “Before / After” snippets here.
+
+## Appendix: Mapping to Future Direction
+
+- FUTURE_DIRECTION high-priority items 1–3 map to the “High” row above.
+- Incremental compilation and schema caching appear under “Tooling & Ecosystem”.
+- Any additional throws (depth limit, pipeline) should be tracked alongside the
+  zero-throw initiative referenced in the roadmap.
