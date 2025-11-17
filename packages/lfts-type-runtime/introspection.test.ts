@@ -17,7 +17,14 @@ import {
   unwrapBrand,
   unwrapReadonly,
 } from "./introspection.ts";
-import { inspect, withMetadata, type ValidationError } from "./mod.ts";
+import {
+  collectMetadata,
+  getMetadata,
+  inspect,
+  withMetadata,
+  type SchemaMetadata,
+  type ValidationError,
+} from "./mod.ts";
 
 // ============================================================================
 // Primitive Types
@@ -719,6 +726,31 @@ Deno.test("introspection hooks: metadata extraction", () => {
   assertEquals(inspectable.metadata.source, "src/types/user.schema.ts");
   assertEquals(contextSchemaName, "User");
   assertEquals(contextSchemaSource, "src/types/user.schema.ts");
+});
+
+Deno.test("getMetadata returns custom metadata", () => {
+  type WorkflowMeta = SchemaMetadata & { readonly stage: string };
+  const schema = withMetadata(enc.str(), { name: "Title", stage: "review" });
+  const metadata = getMetadata<WorkflowMeta>(schema);
+  assertEquals(metadata?.name, "Title");
+  assertEquals(metadata?.stage, "review");
+});
+
+Deno.test("collectMetadata filters schemas by predicate", () => {
+  type WorkflowMeta = SchemaMetadata & { readonly stage: string };
+  const schemas = [
+    withMetadata(enc.str(), { name: "Open", stage: "open" }),
+    enc.num(),
+    withMetadata(enc.str(), { name: "Review", stage: "review" }),
+  ];
+
+  const entries = collectMetadata<WorkflowMeta>(
+    schemas,
+    (meta) => meta.stage === "review",
+  );
+
+  assertEquals(entries.length, 1);
+  assertEquals(entries[0].metadata.name, "Review");
 });
 
 Deno.test("introspection hooks: metadata validation is transparent", () => {

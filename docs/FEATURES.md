@@ -439,7 +439,9 @@ schema metadata and success/failure callbacks.
 
 **APIs:**
 
-- `withMetadata(schema, metadata)` - Attach schema name and source location
+- `withMetadata(schema, metadata)` - Attach schema name/source plus arbitrary workflow metadata
+- `getMetadata(schema)` - Retrieve typed metadata (e.g., `{ stage: "review" }`)
+- `collectMetadata(schemas, predicate?)` - Build registries/filters based on metadata
 - `inspect(schema, configure)` - Wrap schema with observability hooks
 
 **InspectionContext:**
@@ -480,6 +482,10 @@ const result = InspectedOrderSchema.validate(payload);
 // Hooks fire automatically based on validation outcome
 ```
 
+> Tip: `SchemaMetadata` accepts arbitrary typed keys, so you can tag schemas
+> with workflow stages, permissions, or descriptions and later retrieve them
+> via `getMetadata()` / `collectMetadata()` when building registries.
+
 **Features:**
 
 - Zero runtime cost when not used (opt-in wrapper pattern)
@@ -487,7 +493,7 @@ const result = InspectedOrderSchema.validate(payload);
 - Hook errors are caught and logged to prevent breaking validation
 - Works with all validation methods: `validate()`, `validateUnsafe()`,
   `validateAll()`
-- Metadata transparently passes through validation
+- Metadata transparently passes through validation (and is queryable)
 - Added `Op.METADATA` bytecode opcode for schema metadata
 
 **Testing:**

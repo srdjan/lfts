@@ -1,6 +1,7 @@
 // packages/lfts-type-runtime/mod.ts
 import { Op } from "../lfts-type-spec/src/mod.ts";
 import { match as patternMatch } from "ts-pattern";
+import { introspect as introspectSchema } from "./introspection.ts";
 
 export const TYPEOF_PLACEHOLDER = Symbol.for("lfts.typeOf.placeholder");
 
@@ -2330,12 +2331,45 @@ export const AsyncResult = {
  * Metadata extracted from a schema with introspection support.
  * Extended in v0.10.0 to support description and examples for code generation.
  */
-export type SchemaMetadata = {
+export type SchemaMetadata = Readonly<Record<string, unknown>> & {
   readonly name?: string;
   readonly source?: string;
   readonly description?: string;
   readonly examples?: readonly unknown[];
 };
+
+/**
+ * Extract metadata attached via `withMetadata()` if present.
+ */
+export function getMetadata<T extends SchemaMetadata = SchemaMetadata>(
+  schema: TypeObject,
+): T | undefined {
+  const info = introspectSchema(schema);
+  if (info.kind !== "metadata") return undefined;
+  return info.metadata as T;
+}
+
+export type SchemaMetadataEntry<T extends SchemaMetadata = SchemaMetadata> = {
+  readonly schema: TypeObject;
+  readonly metadata: T;
+};
+
+/**
+ * Collect metadata across a list of schemas with optional predicate filtering.
+ */
+export function collectMetadata<T extends SchemaMetadata = SchemaMetadata>(
+  schemas: Iterable<TypeObject>,
+  predicate?: (metadata: T) => boolean,
+): SchemaMetadataEntry<T>[] {
+  const entries: SchemaMetadataEntry<T>[] = [];
+  for (const schema of schemas) {
+    const metadata = getMetadata<T>(schema);
+    if (!metadata) continue;
+    if (predicate && !predicate(metadata)) continue;
+    entries.push({ schema, metadata });
+  }
+  return entries;
+}
 
 /**
  * Introspection context provided to hook callbacks.
@@ -2732,3 +2766,22 @@ export function getPortMethods(portSchema: TypeObject): string[] {
   }
   return names;
 }
+
+// ============================================================================
+// Workflow Orchestration (v0.11.0)
+// ============================================================================
+
+export type {
+  WorkflowError,
+  WorkflowStep,
+  WorkflowStepAnalysis,
+  WorkflowRegistry,
+} from "./workflow.ts";
+
+export {
+  executeStep,
+  createObservableSchema,
+  analyzeWorkflow,
+  createWorkflowRegistry,
+  inspectStep,
+} from "./workflow.ts";
