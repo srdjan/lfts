@@ -943,9 +943,54 @@ console.log(await userPipeline.run()); // "ADA"
 
 **Testing:** 6 focused tests in `packages/lfts-type-runtime/pipeline.test.ts`
 
+### 6. Workflow Graph Builder (v0.11.1, experimental)
+
+**Status:** 🚧 Experimental (opt-in helper at `packages/lfts-type-runtime/workflow-graph.ts`)
+
+Workflow-heavy apps can describe DAGs declaratively. Each stage references an existing `WorkflowStep`, lists dependencies, and optionally supplies a `resolve()` hook to map upstream outputs into the next step's typed input. The runtime performs topological sorting, executes independent branches concurrently, and emits snapshots for observability.
+
+```ts
+import { fromStage, fromStages, graphBuilder } from "./packages/lfts-type-runtime/workflow-graph.ts";
+import type { WorkflowStep } from "./packages/lfts-type-runtime/workflow.ts";
+
+const workflow = graphBuilder<{ tenantId: string }>()
+  .seed({ tenantId: "t_123" })
+  .stage({ name: "fetchTenant", step: fetchTenantStep })
+  .stage({
+    name: "loadBilling",
+    step: loadBillingStep,
+    dependsOn: ["fetchTenant"],
+    resolve: fromStage("fetchTenant", (tenant) => ({ tenantId: tenant.tenantId })),
+  })
+  .stage({ name: "loadUsers", step: loadUsersStep, dependsOn: ["fetchTenant"] })
+  .stage({
+    name: "hydrateDashboard",
+    step: hydrateDashboardStep,
+    dependsOn: ["loadBilling", "loadUsers"],
+    resolve: fromStages(["loadBilling", "loadUsers"], ({ loadBilling, loadUsers }) => ({
+      billing: loadBilling,
+      users: loadUsers,
+    })),
+  })
+  .build();
+
+const outcome = await workflow.run();
+if (outcome.ok) {
+  console.log(outcome.value.outputs.hydrateDashboard);
+}
+```
+
+- Seeds accept values, promises, or `Result`
+- `run()` returns `Result<{ seed, outputs, snapshots }, WorkflowGraphRunFailure>`
+- `maxConcurrency` + mode (`"fail-fast" | "continue"`) options for runtime tuning
+- Snapshots capture stage timing/status; unresolved nodes are tagged as `blocked`
+- `fromStage()` / `fromStages()` helpers eliminate common dependency-mapping boilerplate
+
+**Testing:** 5 integration tests in `packages/lfts-type-runtime/workflow-graph.test.ts`
+
 ---
 
-### 6. Prebuilt Type Annotations (v0.4.0)
+### 7. Prebuilt Type Annotations (v0.4.0)
 
 **Status:** ✅ Fully implemented
 
@@ -1018,7 +1063,7 @@ type PositiveInteger = number & Integer & Min<1>;
 
 ---
 
-### 7. Error Aggregation (v0.4.0)
+### 8. Error Aggregation (v0.4.0)
 
 **Status:** ✅ Fully implemented
 
@@ -1066,7 +1111,7 @@ if (!result.ok) {
 
 ## Performance Optimizations
 
-### 8. DUNION Tag Caching (v0.2.0)
+### 9. DUNION Tag Caching (v0.2.0)
 
 **Status:** ✅ Fully implemented
 
@@ -1084,7 +1129,7 @@ high-performance ADT validation.
 
 ---
 
-### 9. Lazy Path Construction (v0.2.0)
+### 10. Lazy Path Construction (v0.2.0)
 
 **Status:** ✅ Fully implemented
 
@@ -1095,7 +1140,7 @@ success path (80%+ of validations).
 
 ---
 
-### 10. Union Result-Based Validation (v0.3.0)
+### 11. Union Result-Based Validation (v0.3.0)
 
 **Status:** ✅ Fully implemented
 
@@ -1108,7 +1153,7 @@ error returns instead of try/catch.
 
 ---
 
-### 11. Excess-Property Policy (v0.3.0)
+### 12. Excess-Property Policy (v0.3.0)
 
 **Status:** ✅ Fully implemented
 
@@ -1136,7 +1181,7 @@ const schema = enc.obj([
 
 ## Compiler Features
 
-### 12. LFP1020 Policy Rule (v0.3.0)
+### 13. LFP1020 Policy Rule (v0.3.0)
 
 **Status:** ✅ Fully implemented
 

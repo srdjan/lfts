@@ -250,6 +250,50 @@ console.log(result); // "HELLO!"
 
 **Note:** Pipeline is experimental and may change. Use at your own risk.
 
+### Workflow Graph Builder (Experimental)
+
+```typescript
+import { graphBuilder, fromStage, fromStages } from "./workflow-graph.ts";
+import type { WorkflowStep } from "./workflow.ts";
+
+const workflow = graphBuilder<{ userId: string }>()
+  .seed({ userId: "usr_123" })
+  .stage({ name: "fetchUser", step: fetchUserStep })
+  .stage({
+    name: "loadPermissions",
+    step: loadPermissionsStep,
+    dependsOn: ["fetchUser"],
+    resolve: fromStage<{ userId: string }, { userId: string }>(
+      "fetchUser",
+      (output) => ({ userId: output.userId }),
+    ),
+  })
+  .stage({
+    name: "hydrateProfile",
+    step: hydrateProfileStep,
+    dependsOn: ["fetchUser", "loadPermissions"],
+    resolve: fromStages(
+      ["fetchUser", "loadPermissions"],
+      (values) => ({
+        user: values.fetchUser,
+        permissions: values.loadPermissions,
+      }),
+    ),
+  })
+  .build();
+
+const result = await workflow.run();
+if (result.ok) {
+  console.log(result.value.outputs.hydrateProfile);
+}
+```
+
+- DAG-driven scheduling inferred from dependencies
+- Seeds accept values, promises, or `Result`
+- Optional `resolve()` hook per stage to map dependency outputs into typed inputs
+- Helper utilities `fromStage()` / `fromStages()` remove boilerplate when wiring dependencies
+- Snapshots capture per-stage timing/status for observability
+
 ## Performance
 
 The LFTS runtime is optimized for high-performance validation:
@@ -268,12 +312,14 @@ The runtime is designed for optimal tree-shaking:
 - **Core validation:** Always included (~8KB minified)
 - **Introspection:** Only if you use `introspect()` (~2KB)
 - **Pipeline:** Only if you import from `./pipeline.ts` (~3KB)
+- **Workflow graph builder:** Only if you import from `./workflow-graph.ts` (~4KB)
 - **Port helpers:** Only if you use `getPortName()` etc. (~1KB)
 
 **Example bundle sizes:**
 - Validation only: ~8KB
 - Validation + introspection: ~10KB
 - Validation + Pipeline: ~11KB
+- Validation + Workflow Graphs: ~12KB
 - Everything: ~14KB
 
 ## Architecture
@@ -285,6 +331,7 @@ packages/lfts-type-runtime/
 ├── mod.ts              # Core validation and types
 ├── introspection.ts    # Schema introspection
 ├── pipeline.ts         # Optional async pipeline (experimental)
+├── workflow-graph.ts   # Workflow DAG builder (experimental)
 ├── async-result.ts     # (Coming soon) Async effect helpers
 └── README.md           # This file
 ```

@@ -2,6 +2,13 @@
 
 All notable changes to the LFTS compiler project are documented here.
 
+## [Unreleased]
+
+### Added
+
+- **Workflow graph builder (experimental):** New `graphBuilder()` helper in `packages/lfts-type-runtime/workflow-graph.ts` lets you describe DAG-driven workflows with named stages, dependency metadata, and automatic topological scheduling. Seeds accept values/promises/`Result`, the runner emits per-stage snapshots, and `run()` returns `Result<{ seed, outputs, snapshots }, WorkflowGraphRunFailure>` while honoring fail-fast semantics.
+- **Workflow resolve helpers:** Added `fromStage()` / `fromStages()` utilities to simplify `resolve` functions inside DAG stages by safely projecting outputs from dependencies without repeating `ctx.get()` boilerplate.
+
 ## [0.10.0] - 2025-11-10
 
 ### Added
