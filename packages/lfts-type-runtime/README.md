@@ -288,11 +288,98 @@ if (result.ok) {
 }
 ```
 
+**Core Features:**
 - DAG-driven scheduling inferred from dependencies
 - Seeds accept values, promises, or `Result`
 - Optional `resolve()` hook per stage to map dependency outputs into typed inputs
 - Helper utilities `fromStage()` / `fromStages()` remove boilerplate when wiring dependencies
 - Snapshots capture per-stage timing/status for observability
+
+**Conditional Workflows (v0.13.0):**
+
+Execute stages dynamically based on runtime conditions using `when` predicates:
+
+```typescript
+import { graphBuilder, fromStage, matchRoute } from "./workflow-graph.ts";
+
+const workflow = graphBuilder<PRInput>()
+  .seed(prData)
+
+  // Always runs
+  .stage({
+    name: "openPR",
+    step: openPRStep,
+    resolve: (ctx) => ctx.seed
+  })
+
+  // Conditional - only runs for security branches
+  .stage({
+    name: "securityScan",
+    step: securityScanStep,
+    dependsOn: ["openPR"],
+    when: (ctx) => {
+      const pr = ctx.get("openPR");
+      return pr.branch.includes("security") || pr.branch.includes("auth");
+    },
+    resolve: fromStage("openPR")
+  })
+
+  // Pattern-matched routing
+  .stage({
+    name: "reviewPR",
+    step: reviewPRStep,
+    dependsOn: ["openPR"],
+    resolve: fromStage("openPR")
+  })
+
+  // Conditional merge - only if approved
+  .stage({
+    name: "mergePR",
+    step: mergePRStep,
+    dependsOn: ["reviewPR"],
+    when: (ctx) => {
+      const review = ctx.get("reviewPR");
+      return review.status === "approved";
+    },
+    resolve: fromStage("reviewPR")
+  })
+
+  .build();
+
+const result = await workflow.run();
+
+// Skipped stages visible in snapshots
+result.value.snapshots.forEach(snap => {
+  console.log(`${snap.name}: ${snap.status}`);
+  // Output: openPR: ok, securityScan: skipped, reviewPR: ok, mergePR: ok
+});
+```
+
+**Pattern Matching Helper:**
+
+```typescript
+import { matchRoute } from "./workflow-graph.ts";
+
+type ReviewStatus =
+  | { type: "approved"; approvals: number }
+  | { type: "rejected"; reason: string };
+
+const review: ReviewStatus = { type: "approved", approvals: 2 };
+
+const action = matchRoute(review, {
+  approved: { nextStage: "merge", priority: "high" },
+  rejected: { nextStage: "close", priority: "low" }
+});
+// action = { nextStage: "merge", priority: "high" }
+```
+
+**Conditional Workflow Features:**
+- ✅ Declarative conditionals with `when` predicates
+- ✅ Async predicates supported
+- ✅ Result-based predicates (Result.err treated as false)
+- ✅ `skipped` status in snapshots for observability
+- ✅ Pattern matching with `matchRoute()` for discriminated unions
+- ✅ Dependent stages execute even when dependencies are skipped
 
 ## Performance
 

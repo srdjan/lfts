@@ -253,3 +253,177 @@ export function createPRWorkflowRegistry() {
 
   return registry;
 }
+
+/**
+ * Dynamic PR Workflow using DAG-based conditional execution
+ *
+ * This demonstrates the new conditional workflow features (v0.13.0):
+ * - Conditional stages with `when` predicates
+ * - Pattern matching for data-driven routing
+ * - Automatic skipping of stages based on runtime data
+ * - Observable snapshots showing which stages ran vs skipped
+ *
+ * Features shown:
+ * 1. Security scan runs ONLY for security/auth-related branches
+ * 2. Pattern-matched routing based on review status
+ * 3. Conditional merge/close stages
+ */
+export async function runDynamicPRWorkflow(prData: OpenPRInput) {
+  const { graphBuilder, fromStage, matchRoute } = await import(
+    "../../packages/lfts-type-runtime/workflow-graph.ts"
+  );
+
+  console.log("\n🔄 Starting Dynamic PR Workflow (DAG-based)...\n");
+
+  const workflow = graphBuilder<OpenPRInput>()
+    .seed(prData)
+
+    // Stage 1: Open PR (always runs)
+    .stage({
+      name: "openPR",
+      step: openPRStep,
+      resolve: (ctx) => ctx.seed,
+    })
+
+    // Stage 2: Security scan (conditional - only for security branches)
+    .stage({
+      name: "securityScan",
+      step: {
+        name: "SecurityScan",
+        inputSchema: OpenPROutput$,
+        outputSchema: OpenPROutput$,
+        execute: async (input: OpenPROutput) => {
+          console.log(`🔐 Running security scan for ${input.branch}...`);
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          console.log(`✓ Security scan passed for ${input.prId}`);
+          return Result.ok(input);
+        },
+      },
+      dependsOn: ["openPR"],
+      when: (ctx) => {
+        const pr = ctx.get<OpenPROutput>("openPR");
+        const isSecurity = pr.branch.includes("security") ||
+          pr.branch.includes("auth") ||
+          pr.branch.includes("crypto");
+        if (!isSecurity) {
+          console.log(`⊘ Skipping security scan (not a security branch)`);
+        }
+        return isSecurity;
+      },
+      resolve: fromStage("openPR"),
+    })
+
+    // Stage 3: Review PR (always runs after openPR)
+    .stage({
+      name: "reviewPR",
+      step: reviewPRStep,
+      dependsOn: ["openPR"],
+      resolve: (ctx) => {
+        const pr = ctx.get<OpenPROutput>("openPR");
+        return {
+          ...pr,
+          approvals: 2, // Simulate 2 approvals
+        };
+      },
+    })
+
+    // Stage 4: Route decision based on review status (pattern matching)
+    .stage({
+      name: "routeDecision",
+      step: {
+        name: "RouteDecision",
+        inputSchema: ReviewPROutput$,
+        outputSchema: ReviewPROutput$,
+        execute: async (input: ReviewPROutput) => {
+          const action = matchRoute(
+            { type: input.status },
+            {
+              approved: "merge",
+              rejected: "close",
+            } as const,
+          );
+          console.log(`🚦 Routing decision: ${action} (status: ${input.status})`);
+          return Result.ok(input);
+        },
+      },
+      dependsOn: ["reviewPR"],
+      resolve: fromStage("reviewPR"),
+    })
+
+    // Stage 5: Merge (conditional - only if approved)
+    .stage({
+      name: "mergePR",
+      step: mergePRStep,
+      dependsOn: ["routeDecision"],
+      when: (ctx) => {
+        const review = ctx.get<ReviewPROutput>("routeDecision");
+        const shouldMerge = review.status === "approved";
+        if (!shouldMerge) {
+          console.log(`⊘ Skipping merge (status: ${review.status})`);
+        }
+        return shouldMerge;
+      },
+      resolve: (ctx) => {
+        const review = ctx.get<ReviewPROutput>("routeDecision");
+        return {
+          prId: review.prId,
+          status: "approved" as const,
+          approvals: review.approvals,
+          allChecksPassed: true as const,
+        };
+      },
+    })
+
+    // Stage 6: Close PR (conditional - only if rejected)
+    .stage({
+      name: "closePR",
+      step: {
+        name: "ClosePR",
+        inputSchema: ReviewPROutput$,
+        outputSchema: ReviewPROutput$,
+        execute: async (input: ReviewPROutput) => {
+          console.log(`🚫 Closing PR ${input.prId} (rejected)`);
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          return Result.ok(input);
+        },
+      },
+      dependsOn: ["routeDecision"],
+      when: (ctx) => {
+        const review = ctx.get<ReviewPROutput>("routeDecision");
+        const shouldClose = review.status === "rejected";
+        if (!shouldClose) {
+          console.log(`⊘ Skipping close (status: ${review.status})`);
+        }
+        return shouldClose;
+      },
+      resolve: fromStage("routeDecision"),
+    })
+
+    .build();
+
+  // Execute the workflow
+  const result = await workflow.run({ mode: "fail-fast" });
+
+  if (result.ok) {
+    console.log("\n✨ Dynamic PR Workflow completed successfully!\n");
+    console.log("Execution Summary:");
+    console.log("─────────────────────────────────────────────────────");
+
+    for (const snap of result.value.snapshots) {
+      const statusIcon = snap.status === "ok"
+        ? "✓"
+        : snap.status === "skipped"
+        ? "⊘"
+        : "✗";
+      const duration = snap.durationMs ? `(${snap.durationMs.toFixed(1)}ms)` : "";
+      console.log(`  ${statusIcon} ${snap.name}: ${snap.status} ${duration}`);
+    }
+
+    console.log("─────────────────────────────────────────────────────\n");
+
+    return Result.ok(result.value.outputs);
+  } else {
+    console.error("\n❌ Dynamic PR Workflow failed:", result.error);
+    return Result.err(result.error);
+  }
+}

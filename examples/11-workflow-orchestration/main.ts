@@ -18,6 +18,7 @@ import {
 import type { OpenPRInput, PRState } from "./types.ts";
 import {
   runPRWorkflow,
+  runDynamicPRWorkflow,
   openPRStep,
   reviewPRStep,
   mergePRStep,
@@ -478,6 +479,33 @@ async function demo8_ParallelExecution() {
 }
 
 /**
+ * Demo 9: Dynamic Workflows with Conditional Stages (v0.13.0)
+ */
+async function demo9_DynamicWorkflows() {
+  console.log("\n═══════════════════════════════════════════════════════");
+  console.log("Demo 9: Dynamic Workflows (v0.13.0)");
+  console.log("═══════════════════════════════════════════════════════\n");
+
+  console.log("Scenario 1: Security-related branch (auth)\n");
+  const securityPR: OpenPRInput = {
+    title: "Implement OAuth2 authentication",
+    description: "Adds OAuth2 flow for user authentication",
+    branch: "feature/oauth-auth",
+  };
+
+  await runDynamicPRWorkflow(securityPR);
+
+  console.log("\n\nScenario 2: Regular feature branch\n");
+  const regularPR: OpenPRInput = {
+    title: "Add user profile page",
+    description: "Implements user profile UI components",
+    branch: "feature/user-profile",
+  };
+
+  await runDynamicPRWorkflow(regularPR);
+}
+
+/**
  * Main entry point - run all demos
  */
 async function main() {
@@ -494,6 +522,7 @@ async function main() {
     await demo6_ErrorHandling();
     await demo7_AutomaticRetry();
     await demo8_ParallelExecution();
+    await demo9_DynamicWorkflows();
 
     console.log("\n╔═══════════════════════════════════════════════════════╗");
     console.log("║  All demos completed successfully! ✨                 ║");

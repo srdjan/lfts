@@ -44,6 +44,9 @@ export type WorkflowGraphStageConfig<TSeed, TIn, TOut, TErr> = {
   readonly resolve?: (
     ctx: WorkflowGraphStageResolveContext<TSeed>,
   ) => MaybePromise<TIn | Result<TIn, unknown>>;
+  readonly when?: (
+    ctx: WorkflowGraphStageResolveContext<TSeed>,
+  ) => MaybePromise<boolean | Result<boolean, unknown>>;
   readonly metadata?: Record<string, unknown>;
 };
 
@@ -52,7 +55,8 @@ export type WorkflowGraphSnapshotStatus =
   | "running"
   | "ok"
   | "error"
-  | "blocked";
+  | "blocked"
+  | "skipped";
 
 export type WorkflowGraphSnapshot = {
   readonly name: string;
@@ -115,6 +119,9 @@ type InternalStageConfig = {
   readonly resolve?: (
     ctx: WorkflowGraphStageResolveContext<unknown>,
   ) => MaybePromise<unknown | Result<unknown, unknown>>;
+  readonly when?: (
+    ctx: WorkflowGraphStageResolveContext<unknown>,
+  ) => MaybePromise<boolean | Result<boolean, unknown>>;
 };
 
 export interface WorkflowGraphBuilder<TSeed> {
@@ -163,6 +170,7 @@ class WorkflowGraphBuilderImpl<TSeed> implements WorkflowGraphBuilder<TSeed> {
       dependsOn,
       step: config.step as WorkflowStep<unknown, unknown, unknown>,
       resolve: config.resolve as InternalStageConfig["resolve"],
+      when: config.when as InternalStageConfig["when"],
     });
     this.#stageSet.add(name);
     return this;
@@ -350,6 +358,35 @@ class WorkflowGraphImpl implements WorkflowGraph {
       });
     };
     try {
+      // Check conditional execution predicate
+      if (stage.when) {
+        const ctx: WorkflowGraphStageResolveContext<unknown> = {
+          seed: seedValue,
+          results: outputs,
+          dependencies: stage.dependsOn,
+          get<T>(name: string): T {
+            if (!(name in outputs)) {
+              throw new Error(
+                `Stage "${stage.name}" cannot access result of "${name}" before it completes`,
+              );
+            }
+            return outputs[name] as T;
+          },
+        };
+
+        const shouldRun = await stage.when(ctx);
+
+        // Handle Result-based predicate returns
+        const shouldRunValue = isResultLike(shouldRun)
+          ? (shouldRun.ok ? shouldRun.value : false)
+          : shouldRun;
+
+        if (!shouldRunValue) {
+          finish("skipped");
+          return { kind: "success", name: stage.name, value: undefined };
+        }
+      }
+
       const inputResult = await this.#resolveInput(stage, seedValue, outputs);
       if (!inputResult.ok) {
         finish("error", {
@@ -512,4 +549,50 @@ export function fromStages<
     }
     return projector(values, ctx);
   };
+}
+
+/**
+ * Pattern matching helper for routing based on discriminated union type field.
+ *
+ * Provides type-safe routing from a discriminated union value to a result type.
+ * Throws an error if no route matches the discriminant value (fail-fast).
+ *
+ * @template TValue - Discriminated union type with a `type` field
+ * @template TRoute - Result type to return based on the discriminant
+ *
+ * @param value - The discriminated union value to match against
+ * @param routes - Map of discriminant values to route results
+ *
+ * @returns The route result corresponding to the value's discriminant
+ *
+ * @throws Error if no route is defined for the value's discriminant
+ *
+ * @example
+ * ```typescript
+ * type ReviewStatus = { type: "approved" } | { type: "rejected" } | { type: "needs_changes" };
+ *
+ * const review: ReviewStatus = { type: "approved" };
+ * const action = matchRoute(review, {
+ *   "approved": { nextStage: "merge", priority: "high" },
+ *   "rejected": { nextStage: "close", priority: "low" },
+ *   "needs_changes": { nextStage: "notify", priority: "medium" }
+ * });
+ * // action = { nextStage: "merge", priority: "high" }
+ * ```
+ */
+export function matchRoute<TValue extends { type: string }, TRoute>(
+  value: TValue,
+  routes: { [K in TValue["type"]]: TRoute },
+): TRoute {
+  const discriminant = value.type as TValue["type"];
+  const route = routes[discriminant];
+
+  if (route === undefined) {
+    const availableRoutes = Object.keys(routes).join(", ");
+    throw new Error(
+      `matchRoute: No route defined for discriminant "${discriminant}". Available routes: ${availableRoutes}`,
+    );
+  }
+
+  return route;
 }
