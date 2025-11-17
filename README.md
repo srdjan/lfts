@@ -50,6 +50,7 @@ duplicate descriptions scattered across docs):
   - [docs/EFFECTS_GUIDE.md](docs/EFFECTS_GUIDE.md) – AsyncResult, ports, effect discipline
   - [docs/DISTRIBUTED_GUIDE.md](docs/DISTRIBUTED_GUIDE.md) – distributed helpers module
   - [docs/SCHEMA_GENERATION.md](docs/SCHEMA_GENERATION.md) – schema-root and compiler emission
+  - [docs/FEATURES.md#stage-catalog--prebuilt-stage-types](docs/FEATURES.md#stage-catalog--prebuilt-stage-types-v0140) – backend vs HTMX stage builders + catalogs
   - [docs/TUTORIAL.md](docs/TUTORIAL.md) – high-level getting started guide
 - **Development**
   - [CONTRIBUTING.md](CONTRIBUTING.md) – Light-FP etiquette + workflow
@@ -88,6 +89,15 @@ import {
 - `pipe()` + `asPipe()` model the TC39 pipeline proposal while preserving Light-FP guarantees.
 - `.run()` throws `PipelineExecutionError` when a stage produces `Result.err`; `.runResult()` stays pure.
 - Existing code that imported pipeline APIs from `mod.ts` must now import from the subpath (breaking change noted in CHANGELOG and CLAUDE.md).
+
+## Workflow Stage Catalogs (v0.14.0)
+
+Reusable workflow stages are now first-class:
+
+- `defineBackendFunctionStage()` / `defineFullStackHtmxStage()` wrap typed `WorkflowStep`s with metadata (owners, tags, retry config) and, for HTMX stages, fragment + route definitions.
+- `createStageCatalog()` keeps those definitions discoverable; filter with `catalog.byKind("backend_function")` or `catalog.byKind("fullstack_htmx")` during reviews.
+- `graphBuilder.stageFromDefinition()` wires catalog entries into DAGs without duplicating configuration, and `registerHtmxStageRoutes()` hands their route specs to whatever HTTP adapter you use.
+- Learn the full API in [docs/FEATURES.md](docs/FEATURES.md#stage-catalog--prebuilt-stage-types-v0140) and try it out via `examples/12-stage-types`.
 
 ## Ports & Capabilities Terminology
 

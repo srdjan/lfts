@@ -33,6 +33,10 @@ The LFTS runtime follows strict principles to maintain simplicity and predictabi
   - Local import (inside this package): `import { pipe, asPipe, PipelineExecutionError } from "./pipeline.ts"`
   - `.run()` throws `PipelineExecutionError` on `Result.err`, `.runResult()` stays exception-free
   - Not included in bundles unless used (tree-shaking)
+- **Workflow Stage Catalogs** (`./stage-types.ts`) - Prebuilt workflow stages + HTMX fragments
+  - `defineBackendFunctionStage()` / `defineFullStackHtmxStage()` wrap `WorkflowStep`s with owners/tags/retry metadata and (for HTMX) fragment + route definitions
+  - `createStageCatalog()` centralizes approved stage definitions; `registerHtmxStageRoutes()` mounts HTMX handlers without ad-hoc wiring
+  - `graphBuilder.stageFromDefinition()` (in `workflow-graph.ts`) consumes these definitions so DAGs stay in sync with the catalog
 
 **Breaking note (v0.9.0):** Pipeline helpers were removed from `mod.ts` exports.
 Update any `mod.ts` imports to the explicit subpath before upgrading.
@@ -380,6 +384,56 @@ const action = matchRoute(review, {
 - ✅ `skipped` status in snapshots for observability
 - ✅ Pattern matching with `matchRoute()` for discriminated unions
 - ✅ Dependent stages execute even when dependencies are skipped
+
+### Prebuilt Stage Types & HTMX Integration (v0.14.0)
+
+Pair the workflow graph with reusable stage definitions declared in `stage-types.ts`:
+
+```ts
+import {
+  defineBackendFunctionStage,
+  defineFullStackHtmxStage,
+  createStageCatalog,
+  registerHtmxStageRoutes,
+} from "./stage-types.ts";
+import { graphBuilder, fromStage } from "./workflow-graph.ts";
+
+const verifyStage = defineBackendFunctionStage({
+  name: "VerifySpend",
+  inputSchema: SpendRequest$,
+  outputSchema: SpendDecision$,
+  owners: ["finance-platform"],
+  execute: async (input) => Result.ok({ ...input, requiresHuman: input.cost > 1000 }),
+});
+
+const approvalStage = defineFullStackHtmxStage({
+  name: "ManualApproval",
+  inputSchema: SpendDecision$,
+  outputSchema: ApprovalResult$,
+  fragment: (vm) => `<section>Approve ${vm.requestId}?</section>`,
+  routes: [{ method: "POST", path: "/approvals/:id/decision", handler: () => ({ status: 200, body: "ok" }) }],
+  execute: async (input) => Result.ok({ requestId: input.requestId, status: "pending" as const }),
+});
+
+const catalog = createStageCatalog([verifyStage, approvalStage]);
+registerHtmxStageRoutes(approvalStage, (route) => httpRouter.add(route));
+
+const workflow = graphBuilder<SpendRequest>()
+  .seed(seed)
+  .stageFromDefinition(verifyStage, { name: "verify", resolve: (ctx) => ctx.seed })
+  .stageFromDefinition(approvalStage, {
+    name: "manualGate",
+    dependsOn: ["verify"],
+    resolve: fromStage("verify"),
+    when: (ctx) => ctx.get<{ requiresHuman: boolean }>("verify").requiresHuman,
+  })
+  .build();
+```
+
+- Stage metadata (owners, tags, retry, ports/capabilities) stays centralized for docs + observability.
+- HTMX fragment + route definitions live with the stage and stay deployable via `registerHtmxStageRoutes()`.
+- Catalog queries (`catalog.byKind("backend_function")`) make reviews and governance easier.
+- Example project: `examples/12-stage-types` shows catalog wiring plus conditional DAG stages end-to-end.
 
 ## Performance
 

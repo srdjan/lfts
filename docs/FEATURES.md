@@ -996,6 +996,7 @@ if (outcome.ok) {
 - `createStageCatalog()` enforces unique names and lets you list stages by `stageKind` ("backend_function" vs "fullstack_htmx").
 - `graphBuilder.stageFromDefinition()` consumes these stage objects directly, so DAGs stay aligned with the catalog.
 - `registerHtmxStageRoutes(stage, register)` makes UI plumbing explicit: feed the collected route specs into whatever HTTP adapter you use.
+- Example walkthrough: [`examples/12-stage-types`](../examples/12-stage-types/) wires a backend policy stage + HTMX fragment through a catalog and conditional DAG stage.
 
 ```ts
 import {

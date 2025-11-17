@@ -9,6 +9,8 @@ I spent two weeks evaluating workflow engines for a client's approval system. Ca
 
 Here's the surprising bit: schema metadata makes workflows self-documenting. Each step is just a function with typed inputs and outputs. The engine validates transitions automatically. No YAML, no decorators, no magic. And with v0.12.0's retry and parallel execution, plus v0.13.0's conditional stages, you get dynamic workflows that adapt to runtime conditions.
 
+> **Update (v0.14.0):** Runtime support for stage catalogs + HTMX fragments now ships in `stage-types.ts`. Wrap steps with `defineBackendFunctionStage()` / `defineFullStackHtmxStage()`, toss them into a `createStageCatalog()`, and the workflow graph, documentation, and router wiring stay perfectly aligned.
+
 Let me show you how to build a PR review workflow with automatic retries, concurrent steps, and conditional execution—all type-safe, all in ~150 lines.
 
 ## The Core Pattern
