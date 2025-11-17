@@ -2785,3 +2785,21 @@ export {
   createWorkflowRegistry,
   inspectStep,
 } from "./workflow.ts";
+
+// ============================================================================
+// State Machine (v0.11.0)
+// ============================================================================
+
+export type {
+  TransitionError,
+  StateWithType,
+  TransitionDef,
+  StateMachineConfig,
+  StateMachine,
+  StateMachineBuilder,
+} from "./state-machine.ts";
+
+export {
+  createStateMachine,
+  stateMachine,
+} from "./state-machine.ts";
