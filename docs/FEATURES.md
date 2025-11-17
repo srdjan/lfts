@@ -270,11 +270,13 @@ See [DISTRIBUTED_GUIDE.md](./DISTRIBUTED_GUIDE.md) for complete documentation, b
 
 ---
 
-## Workflow Orchestration (v0.11.0)
+## Workflow Orchestration (v0.11.0, v0.12.0)
 
 **Status:** ✅ Production ready
 
 Schema-driven workflow orchestration primitives for building type-safe, validated multi-step business processes. Built on introspection APIs to enable self-documenting workflows with automatic input/output validation.
+
+**v0.12.0 additions:** Automatic retry with exponential backoff and parallel step execution (fail-fast and settle-all modes).
 
 **Philosophy:** "Workflows are schemas" - define your workflow steps using schemas, and the runtime handles validation, observability, and introspection automatically.
 
@@ -430,6 +432,93 @@ const adminSteps = registry.find(step =>
 const reviewStep = registry.findByName("ReviewPR");
 ```
 
+### Automatic Retry (v0.12.0)
+
+Steps can be configured with automatic retry using exponential backoff:
+
+```typescript
+import { type WorkflowStep, type RetryConfig } from "./packages/lfts-type-runtime/mod.ts";
+
+const apiStep: WorkflowStep<ApiRequest, ApiResponse, NetworkError> = {
+  name: "CallAPI",
+  inputSchema: ApiRequest$,
+  outputSchema: ApiResponse$,
+  execute: async (input) => {
+    // Potentially flaky API call
+    return await httpGet<ApiResponse>(url, ApiResponse$);
+  },
+  metadata: {
+    retry: {
+      maxAttempts: 3,
+      initialDelayMs: 100,
+      backoffMultiplier: 2,
+      maxDelayMs: 5000,
+      shouldRetry: (error, attempt) => {
+        // Only retry on transient errors
+        return error.type === "timeout" || error.type === "connection_refused";
+      }
+    }
+  }
+};
+
+// Retry happens automatically during executeStep()
+const result = await executeStep(apiStep, request);
+```
+
+**Retry configuration:**
+- `maxAttempts` - Maximum number of retry attempts (required)
+- `initialDelayMs` - Initial delay before first retry (default: 100ms)
+- `backoffMultiplier` - Exponential backoff multiplier (default: 2)
+- `maxDelayMs` - Maximum delay between retries (default: 10000ms)
+- `shouldRetry` - Predicate to determine if error should trigger retry
+
+Retry uses `withRetry()` from [distributed.ts](../packages/lfts-type-runtime/distributed.ts) internally.
+
+### Parallel Execution (v0.12.0)
+
+Execute multiple workflow steps concurrently with explicit error handling:
+
+```typescript
+import {
+  executeStepsInParallel,
+  type ParallelMode
+} from "./packages/lfts-type-runtime/mod.ts";
+
+// Fail-fast mode - stops on first error
+const result = await executeStepsInParallel([
+  { step: fetchUserStep, input: { userId: "123" } },
+  { step: fetchPostsStep, input: { userId: "123" } },
+  { step: fetchCommentsStep, input: { userId: "123" } }
+], { mode: "fail-fast" });
+
+if (result.mode === "fail-fast" && result.result.ok) {
+  const [user, posts, comments] = result.result.value;
+  console.log("All steps succeeded:", { user, posts, comments });
+} else {
+  console.error("At least one step failed");
+}
+
+// Settle-all mode - waits for all steps and collects successes/failures
+const result2 = await executeStepsInParallel([
+  { step: step1, input: data1 },
+  { step: step2, input: data2 },
+  { step: step3, input: data3 }
+], { mode: "settle-all" });
+
+if (result2.mode === "settle-all") {
+  console.log(`${result2.successes.length} succeeded, ${result2.failures.length} failed`);
+  // Process partial results
+  result2.successes.forEach(value => processSuccess(value));
+  result2.failures.forEach(error => logError(error));
+}
+```
+
+**Parallel modes:**
+- `fail-fast` - Returns immediately on first error with `Result<T[], WorkflowError | E>`
+- `settle-all` - Waits for all steps, returns `{ successes: T[], failures: Array<WorkflowError | E> }`
+
+**Type safety:** All steps in parallel execution must have the same error type.
+
 ### Code Generation
 
 Generate documentation, diagrams, and tests from workflow definitions:
@@ -464,14 +553,14 @@ await Deno.writeTextFile("workflow.test.ts", tests);
 ```
 
 **Files:**
-- Runtime implementation: [`workflow.ts`](../packages/lfts-type-runtime/workflow.ts) (~397 lines)
+- Runtime implementation: [`workflow.ts`](../packages/lfts-type-runtime/workflow.ts) (~567 lines, v0.12.0)
 - State machine: [`state-machine.ts`](../packages/lfts-type-runtime/state-machine.ts) (~347 lines)
 - Code generators: [`workflow.ts`](../packages/lfts-codegen/workflow.ts) (~590 lines)
-- Tests: [`workflow.test.ts`](../packages/lfts-type-runtime/workflow.test.ts) (15/15 passing)
+- Tests: [`workflow.test.ts`](../packages/lfts-type-runtime/workflow.test.ts) (22/22 passing, +7 for retry/parallel)
 - Tests: [`state-machine.test.ts`](../packages/lfts-type-runtime/state-machine.test.ts) (16/16 passing)
 - Tests: [`workflow.test.ts`](../packages/lfts-codegen/workflow.test.ts) (35/35 passing)
 
-**Test Coverage:** 66/66 tests passing (100%)
+**Test Coverage:** 73/73 tests passing (100%)
 
 **Example:** See [examples/11-workflow-orchestration](../examples/11-workflow-orchestration/) for complete PR review workflow with all patterns.
 

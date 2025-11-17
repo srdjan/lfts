@@ -4,6 +4,11 @@
 import {
   stateMachine,
   type WorkflowError,
+  type WorkflowStep,
+  executeStep,
+  executeStepsInParallel,
+  Result,
+  t,
 } from "../../packages/lfts-type-runtime/mod.ts";
 import {
   generateWorkflowDocs,
@@ -259,6 +264,220 @@ async function demo6_ErrorHandling() {
 }
 
 /**
+ * Demo 7: Automatic retry with exponential backoff
+ */
+async function demo7_AutomaticRetry() {
+  console.log("\n═══════════════════════════════════════════════════════");
+  console.log("Demo 7: Automatic Retry (v0.12.0)");
+  console.log("═══════════════════════════════════════════════════════\n");
+
+  let attemptCount = 0;
+
+  // Flaky step that fails first 2 attempts
+  const flakyApiStep: WorkflowStep<
+    { userId: string },
+    { userId: string; data: string },
+    { type: "transient" } | { type: "permanent" }
+  > = {
+    name: "FlakyAPICall",
+    inputSchema: t.object({ userId: t.string() }).bc,
+    outputSchema: t.object({
+      userId: t.string(),
+      data: t.string(),
+    }).bc,
+    execute: async (input) => {
+      attemptCount++;
+      console.log(`  Attempt ${attemptCount}...`);
+
+      if (attemptCount < 3) {
+        // Simulate transient failure
+        return Result.err({ type: "transient" as const });
+      }
+
+      // Success on 3rd attempt
+      return Result.ok({
+        userId: input.userId,
+        data: "User profile fetched successfully",
+      });
+    },
+    metadata: {
+      retry: {
+        maxAttempts: 3,
+        initialDelayMs: 50,
+        backoffMultiplier: 2,
+        shouldRetry: (error, attempt) => {
+          // Only retry transient errors
+          return error.type === "transient";
+        },
+      },
+    },
+  };
+
+  console.log("Executing flaky API call with automatic retry...\n");
+  const result = await executeStep(flakyApiStep, { userId: "user_123" });
+
+  if (result.ok) {
+    console.log(`\n✓ Success after ${attemptCount} attempts`);
+    console.log("  Result:", result.value);
+  } else {
+    console.log("\n✗ Failed after all retry attempts");
+    console.log("  Error:", result.error);
+  }
+
+  // Reset for next demo
+  attemptCount = 0;
+
+  console.log("\n\nTesting permanent error (no retry)...\n");
+  const permanentErrorStep: WorkflowStep<
+    { userId: string },
+    { data: string },
+    { type: "transient" } | { type: "permanent" }
+  > = {
+    name: "PermanentError",
+    inputSchema: t.object({ userId: t.string() }).bc,
+    outputSchema: t.object({ data: t.string() }).bc,
+    execute: async (input) => {
+      attemptCount++;
+      console.log(`  Attempt ${attemptCount}...`);
+      return Result.err({ type: "permanent" as const });
+    },
+    metadata: {
+      retry: {
+        maxAttempts: 3,
+        initialDelayMs: 50,
+        shouldRetry: (error) => error.type === "transient",
+      },
+    },
+  };
+
+  const result2 = await executeStep(permanentErrorStep, { userId: "user_456" });
+  if (!result2.ok) {
+    console.log("\n✓ Correctly stopped after 1 attempt (permanent error)");
+    console.log("  Error:", result2.error);
+  }
+}
+
+/**
+ * Demo 8: Parallel execution with fail-fast and settle-all modes
+ */
+async function demo8_ParallelExecution() {
+  console.log("\n═══════════════════════════════════════════════════════");
+  console.log("Demo 8: Parallel Execution (v0.12.0)");
+  console.log("═══════════════════════════════════════════════════════\n");
+
+  // Define steps for parallel execution
+  const fetchUserStep: WorkflowStep<
+    { userId: string },
+    { userId: string; name: string },
+    { type: "not_found" }
+  > = {
+    name: "FetchUser",
+    inputSchema: t.object({ userId: t.string() }).bc,
+    outputSchema: t.object({ userId: t.string(), name: t.string() }).bc,
+    execute: async (input) => {
+      await new Promise((resolve) => setTimeout(resolve, 50)); // Simulate delay
+      return Result.ok({ userId: input.userId, name: "Alice" });
+    },
+  };
+
+  const fetchPostsStep: WorkflowStep<
+    { userId: string },
+    { userId: string; posts: number },
+    { type: "not_found" }
+  > = {
+    name: "FetchPosts",
+    inputSchema: t.object({ userId: t.string() }).bc,
+    outputSchema: t.object({ userId: t.string(), posts: t.number() }).bc,
+    execute: async (input) => {
+      await new Promise((resolve) => setTimeout(resolve, 30)); // Simulate delay
+      return Result.ok({ userId: input.userId, posts: 42 });
+    },
+  };
+
+  const fetchCommentsStep: WorkflowStep<
+    { userId: string },
+    { userId: string; comments: number },
+    { type: "not_found" }
+  > = {
+    name: "FetchComments",
+    inputSchema: t.object({ userId: t.string() }).bc,
+    outputSchema: t.object({ userId: t.string(), comments: t.number() }).bc,
+    execute: async (input) => {
+      await new Promise((resolve) => setTimeout(resolve, 40)); // Simulate delay
+      return Result.ok({ userId: input.userId, comments: 128 });
+    },
+  };
+
+  console.log("Scenario 1: Fail-fast mode (all succeed)\n");
+  const result1 = await executeStepsInParallel(
+    [
+      { step: fetchUserStep, input: { userId: "user_123" } },
+      { step: fetchPostsStep, input: { userId: "user_123" } },
+      { step: fetchCommentsStep, input: { userId: "user_123" } },
+    ],
+    { mode: "fail-fast" }
+  );
+
+  if (result1.mode === "fail-fast" && result1.result.ok) {
+    console.log("✓ All steps succeeded in parallel");
+    console.log("  User:", result1.result.value[0]);
+    console.log("  Posts:", result1.result.value[1]);
+    console.log("  Comments:", result1.result.value[2]);
+  }
+
+  console.log("\n\nScenario 2: Fail-fast mode (one fails)\n");
+  const failingStep: WorkflowStep<
+    { userId: string },
+    { data: string },
+    { type: "not_found" }
+  > = {
+    name: "FailingStep",
+    inputSchema: t.object({ userId: t.string() }).bc,
+    outputSchema: t.object({ data: t.string() }).bc,
+    execute: async () => Result.err({ type: "not_found" as const }),
+  };
+
+  const result2 = await executeStepsInParallel(
+    [
+      { step: fetchUserStep, input: { userId: "user_123" } },
+      { step: failingStep, input: { userId: "user_123" } },
+      { step: fetchPostsStep, input: { userId: "user_123" } },
+    ],
+    { mode: "fail-fast" }
+  );
+
+  if (result2.mode === "fail-fast" && !result2.result.ok) {
+    console.log("✓ Stopped on first error (fail-fast)");
+    console.log("  Error:", result2.result.error);
+  }
+
+  console.log("\n\nScenario 3: Settle-all mode (partial failures)\n");
+  const result3 = await executeStepsInParallel(
+    [
+      { step: fetchUserStep, input: { userId: "user_123" } },
+      { step: failingStep, input: { userId: "user_123" } },
+      { step: fetchPostsStep, input: { userId: "user_123" } },
+      { step: fetchCommentsStep, input: { userId: "user_123" } },
+    ],
+    { mode: "settle-all" }
+  );
+
+  if (result3.mode === "settle-all") {
+    console.log(
+      `✓ Completed all steps: ${result3.successes.length} succeeded, ${result3.failures.length} failed`
+    );
+    console.log("  Successes:");
+    result3.successes.forEach((value) => {
+      console.log("    -", value);
+    });
+    console.log("  Failures:");
+    result3.failures.forEach((error) => {
+      console.log("    -", error);
+    });
+  }
+}
+
+/**
  * Main entry point - run all demos
  */
 async function main() {
@@ -273,6 +492,8 @@ async function main() {
     demo4_StateMachine();
     await demo5_CodeGeneration();
     await demo6_ErrorHandling();
+    await demo7_AutomaticRetry();
+    await demo8_ParallelExecution();
 
     console.log("\n╔═══════════════════════════════════════════════════════╗");
     console.log("║  All demos completed successfully! ✨                 ║");

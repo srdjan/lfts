@@ -2768,7 +2768,7 @@ export function getPortMethods(portSchema: TypeObject): string[] {
 }
 
 // ============================================================================
-// Workflow Orchestration (v0.11.0)
+// Workflow Orchestration (v0.11.0, v0.12.0 - retry & parallel)
 // ============================================================================
 
 export type {
@@ -2776,6 +2776,11 @@ export type {
   WorkflowStep,
   WorkflowStepAnalysis,
   WorkflowRegistry,
+  RetryConfig,
+  WorkflowStepMetadata,
+  ParallelStepInput,
+  ParallelMode,
+  ParallelResult,
 } from "./workflow.ts";
 
 export {
@@ -2784,6 +2789,7 @@ export {
   analyzeWorkflow,
   createWorkflowRegistry,
   inspectStep,
+  executeStepsInParallel,
 } from "./workflow.ts";
 
 // ============================================================================

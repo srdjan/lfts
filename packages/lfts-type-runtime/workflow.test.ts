@@ -8,6 +8,7 @@ import {
   createObservableSchema,
   createWorkflowRegistry,
   executeStep,
+  executeStepsInParallel,
   inspectStep,
   type WorkflowStep,
 } from "./workflow.ts";
@@ -685,5 +686,217 @@ Deno.test("integration: workflow fails on insufficient approvals", async () => {
   assertEquals(result.ok, false);
   if (!result.ok) {
     assertEquals(result.error.type, "validation_failed");
+  }
+});
+
+// ============================================================================
+// Retry Tests (v0.12.0)
+// ============================================================================
+
+Deno.test("executeStep: automatic retry on transient errors", async () => {
+  let attempt = 0;
+
+  const flaky: WorkflowStep<{ id: string }, { id: string; value: number }, { type: "transient" }> = {
+    name: "FlakyStep",
+    inputSchema: t.object({ id: t.string() }).bc,
+    outputSchema: t.object({ id: t.string(), value: t.number() }).bc,
+    execute: async (input) => {
+      attempt++;
+      if (attempt < 3) {
+        return Result.err({ type: "transient" as const });
+      }
+      return Result.ok({ id: input.id, value: 42 });
+    },
+    metadata: {
+      retry: {
+        maxAttempts: 3,
+        initialDelayMs: 10,
+      },
+    },
+  };
+
+  const result = await executeStep(flaky, { id: "test" });
+
+  assertEquals(result.ok, true);
+  if (result.ok) {
+    assertEquals(result.value.value, 42);
+  }
+  assertEquals(attempt, 3); // Verify it retried
+});
+
+Deno.test("executeStep: retry respects maxAttempts", async () => {
+  let attempt = 0;
+
+  const failing: WorkflowStep<{ id: string }, { value: number }, { type: "error" }> = {
+    name: "FailingStep",
+    inputSchema: t.object({ id: t.string() }).bc,
+    outputSchema: t.object({ value: t.number() }).bc,
+    execute: async (input) => {
+      attempt++;
+      return Result.err({ type: "error" as const });
+    },
+    metadata: {
+      retry: {
+        maxAttempts: 3,
+        initialDelayMs: 10,
+      },
+    },
+  };
+
+  const result = await executeStep(failing, { id: "test" });
+
+  assertEquals(result.ok, false);
+  assertEquals(attempt, 3); // Attempted 3 times total
+});
+
+Deno.test("executeStep: retry uses shouldRetry predicate", async () => {
+  let attempt = 0;
+
+  const selective: WorkflowStep<
+    { id: string },
+    { value: number },
+    { type: "retryable" } | { type: "permanent" }
+  > = {
+    name: "SelectiveRetryStep",
+    inputSchema: t.object({ id: t.string() }).bc,
+    outputSchema: t.object({ value: t.number() }).bc,
+    execute: async (input) => {
+      attempt++;
+      if (attempt === 1) {
+        return Result.err({ type: "retryable" as const });
+      }
+      return Result.err({ type: "permanent" as const });
+    },
+    metadata: {
+      retry: {
+        maxAttempts: 5,
+        initialDelayMs: 10,
+        shouldRetry: (err) => err.type === "retryable",
+      },
+    },
+  };
+
+  const result = await executeStep(selective, { id: "test" });
+
+  assertEquals(result.ok, false);
+  if (!result.ok) {
+    assertEquals(result.error.type, "permanent");
+  }
+  assertEquals(attempt, 2); // Retried once (retryable), then got permanent
+});
+
+// ============================================================================
+// Parallel Execution Tests (v0.12.0)
+// ============================================================================
+
+Deno.test("executeStepsInParallel: fail-fast mode stops on first error", async () => {
+  const step1: WorkflowStep<{ id: string }, { value: number }, { type: "error" }> = {
+    name: "Step1",
+    inputSchema: t.object({ id: t.string() }).bc,
+    outputSchema: t.object({ value: t.number() }).bc,
+    execute: async (input) => Result.ok({ value: 1 }),
+  };
+
+  const step2: WorkflowStep<{ id: string }, { value: number }, { type: "error" }> = {
+    name: "Step2",
+    inputSchema: t.object({ id: t.string() }).bc,
+    outputSchema: t.object({ value: t.number() }).bc,
+    execute: async (input) => Result.err({ type: "error" as const }),
+  };
+
+  const step3: WorkflowStep<{ id: string }, { value: number }, { type: "error" }> = {
+    name: "Step3",
+    inputSchema: t.object({ id: t.string() }).bc,
+    outputSchema: t.object({ value: t.number() }).bc,
+    execute: async (input) => Result.ok({ value: 3 }),
+  };
+
+  const result = await executeStepsInParallel([
+    { step: step1, input: { id: "1" } },
+    { step: step2, input: { id: "2" } },
+    { step: step3, input: { id: "3" } },
+  ], { mode: "fail-fast" });
+
+  assertEquals(result.mode, "fail-fast");
+  if (result.mode === "fail-fast") {
+    assertEquals(result.result.ok, false);
+  }
+});
+
+Deno.test("executeStepsInParallel: settle-all mode gathers all results", async () => {
+  const step1: WorkflowStep<{ id: string }, { value: number }, { type: "error" }> = {
+    name: "Step1",
+    inputSchema: t.object({ id: t.string() }).bc,
+    outputSchema: t.object({ value: t.number() }).bc,
+    execute: async (input) => Result.ok({ value: 1 }),
+  };
+
+  const step2: WorkflowStep<{ id: string }, { value: number }, { type: "error" }> = {
+    name: "Step2",
+    inputSchema: t.object({ id: t.string() }).bc,
+    outputSchema: t.object({ value: t.number() }).bc,
+    execute: async (input) => Result.err({ type: "error" as const }),
+  };
+
+  const step3: WorkflowStep<{ id: string }, { value: number }, { type: "error" }> = {
+    name: "Step3",
+    inputSchema: t.object({ id: t.string() }).bc,
+    outputSchema: t.object({ value: t.number() }).bc,
+    execute: async (input) => Result.ok({ value: 3 }),
+  };
+
+  const result = await executeStepsInParallel([
+    { step: step1, input: { id: "1" } },
+    { step: step2, input: { id: "2" } },
+    { step: step3, input: { id: "3" } },
+  ], { mode: "settle-all" });
+
+  assertEquals(result.mode, "settle-all");
+  if (result.mode === "settle-all") {
+    assertEquals(result.successes.length, 2);
+    assertEquals(result.failures.length, 1);
+    assertEquals(result.successes[0].value, 1);
+    assertEquals(result.successes[1].value, 3);
+  }
+});
+
+Deno.test("executeStepsInParallel: returns array of results in order", async () => {
+  const step: WorkflowStep<{ id: number }, { value: number }, never> = {
+    name: "MultiplyStep",
+    inputSchema: t.object({ id: t.number() }).bc,
+    outputSchema: t.object({ value: t.number() }).bc,
+    execute: async (input) => {
+      // Add small random delay to ensure concurrency
+      await new Promise(resolve => setTimeout(resolve, Math.random() * 10));
+      return Result.ok({ value: input.id * 2 });
+    },
+  };
+
+  const result = await executeStepsInParallel([
+    { step, input: { id: 1 } },
+    { step, input: { id: 2 } },
+    { step, input: { id: 3 } },
+    { step, input: { id: 4 } },
+  ], { mode: "fail-fast" });
+
+  assertEquals(result.mode, "fail-fast");
+  if (result.mode === "fail-fast" && result.result.ok) {
+    assertEquals(result.result.value.length, 4);
+    assertEquals(result.result.value[0].value, 2);
+    assertEquals(result.result.value[1].value, 4);
+    assertEquals(result.result.value[2].value, 6);
+    assertEquals(result.result.value[3].value, 8);
+  }
+});
+
+Deno.test("executeStepsInParallel: handles empty input array", async () => {
+  const result = await executeStepsInParallel([], { mode: "fail-fast" });
+
+  assertEquals(result.mode, "fail-fast");
+  if (result.mode === "fail-fast") {
+    assertEquals(result.result.ok, true);
+    if (result.result.ok) {
+      assertEquals(result.result.value.length, 0);
+    }
   }
 });

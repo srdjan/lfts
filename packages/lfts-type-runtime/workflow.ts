@@ -35,6 +35,7 @@ import type { Result, ValidationError, TypeObject } from "./mod.ts";
 import { inspect, validateSafe } from "./mod.ts";
 import { getMetadata, type SchemaMetadata } from "./mod.ts";
 import { introspect, getRefinements } from "./introspection.ts";
+import { withRetry } from "./distributed.ts";
 
 /**
  * Workflow error types
@@ -56,6 +57,41 @@ export type WorkflowError =
     };
 
 /**
+ * Retry configuration for workflow steps
+ *
+ * @template TErr - Error type for the step execution
+ */
+export type RetryConfig<TErr> = {
+  /** Maximum number of retry attempts */
+  maxAttempts: number;
+
+  /** Initial delay in milliseconds before first retry (default: 100ms) */
+  initialDelayMs?: number;
+
+  /** Backoff multiplier for exponential backoff (default: 2) */
+  backoffMultiplier?: number;
+
+  /** Maximum delay between retries in milliseconds (default: 10000ms) */
+  maxDelayMs?: number;
+
+  /** Predicate to determine if an error should trigger a retry */
+  shouldRetry?: (error: TErr, attempt: number) => boolean;
+};
+
+/**
+ * Metadata for workflow steps
+ *
+ * @template TErr - Error type for the step execution
+ */
+export type WorkflowStepMetadata<TErr> = {
+  /** Retry configuration for automatic retry on failure */
+  retry?: RetryConfig<TErr>;
+
+  /** Additional custom metadata */
+  [key: string]: unknown;
+};
+
+/**
  * A single step in a workflow with typed inputs and outputs
  *
  * @template TIn - Input type for the step
@@ -75,8 +111,8 @@ export type WorkflowStep<TIn, TOut, TErr> = {
   /** Execute function that performs the step's business logic */
   execute: (input: TIn) => Promise<Result<TOut, TErr>>;
 
-  /** Optional metadata for the step */
-  metadata?: Record<string, unknown>;
+  /** Optional metadata for the step (including retry configuration) */
+  metadata?: WorkflowStepMetadata<TErr>;
 };
 
 /**
@@ -129,8 +165,15 @@ export async function executeStep<TIn, TOut, TErr>(
     };
   }
 
-  // Execute the step
-  const result = await step.execute(inputResult.value as TIn);
+  // Execute the step (with retry if configured)
+  const executeWithRetry = step.metadata?.retry
+    ? () => withRetry(
+        () => step.execute(inputResult.value as TIn),
+        step.metadata!.retry!
+      )
+    : () => step.execute(inputResult.value as TIn);
+
+  const result = await executeWithRetry();
   if (!result.ok) {
     return result;
   }
@@ -149,6 +192,125 @@ export async function executeStep<TIn, TOut, TErr>(
   }
 
   return { ok: true, value: outputResult.value as TOut };
+}
+
+/**
+ * Input specification for parallel step execution
+ *
+ * @template TIn - Input type for the step
+ * @template TOut - Output type for the step
+ * @template TErr - Error type for the step
+ */
+export type ParallelStepInput<TIn, TOut, TErr> = {
+  /** The workflow step to execute */
+  step: WorkflowStep<TIn, TOut, TErr>;
+
+  /** Input data for the step */
+  input: TIn;
+
+  /** Optional label for error reporting */
+  label?: string;
+};
+
+/**
+ * Execution mode for parallel steps
+ */
+export type ParallelMode = "fail-fast" | "settle-all";
+
+/**
+ * Result of parallel step execution
+ *
+ * @template T - Output type
+ * @template E - Error type
+ */
+export type ParallelResult<T, E> =
+  | { mode: "fail-fast"; result: Result<T[], WorkflowError | E> }
+  | { mode: "settle-all"; successes: T[]; failures: Array<WorkflowError | E> };
+
+/**
+ * Execute multiple workflow steps in parallel
+ *
+ * Runs all provided steps concurrently and returns results based on the
+ * specified mode. In "fail-fast" mode, returns immediately on first error.
+ * In "settle-all" mode, waits for all steps and returns both successes and failures.
+ *
+ * @template TIn - Input type (can vary per step)
+ * @template TOut - Output type (can vary per step)
+ * @template TErr - Error type
+ *
+ * @param stepInputs - Array of step/input pairs to execute
+ * @param options - Execution options (mode: "fail-fast" | "settle-all")
+ *
+ * @returns ParallelResult with successes/failures based on mode
+ *
+ * @example
+ * ```typescript
+ * const result = await executeStepsInParallel([
+ *   { step: fetchUserStep, input: { userId: "123" } },
+ *   { step: fetchPostsStep, input: { userId: "123" } },
+ *   { step: fetchCommentsStep, input: { userId: "123" } }
+ * ], { mode: "fail-fast" });
+ *
+ * if (result.mode === "fail-fast" && result.result.ok) {
+ *   const [user, posts, comments] = result.result.value;
+ *   console.log("All steps succeeded:", { user, posts, comments });
+ * }
+ * ```
+ */
+export async function executeStepsInParallel<TOut, TErr>(
+  stepInputs: ParallelStepInput<any, TOut, TErr>[],
+  options: { mode?: ParallelMode } = {}
+): Promise<ParallelResult<TOut, TErr>> {
+  const { mode = "fail-fast" } = options;
+
+  // Execute all steps in parallel
+  const promises = stepInputs.map(({ step, input }) => executeStep(step, input));
+
+  if (mode === "fail-fast") {
+    // Fail-fast: stop on first error
+    try {
+      const results = await Promise.all(promises);
+
+      // Check if any failed
+      for (const result of results) {
+        if (!result.ok) {
+          return { mode: "fail-fast", result };
+        }
+      }
+
+      // All succeeded
+      const values = results.map((r) => (r as { ok: true; value: TOut }).value);
+      return { mode: "fail-fast", result: { ok: true, value: values } };
+    } catch (error) {
+      // This shouldn't happen as we use Result pattern, but handle it just in case
+      return {
+        mode: "fail-fast",
+        result: {
+          ok: false,
+          error: {
+            type: "workflow_stopped" as const,
+            reason: `Unexpected error during parallel execution: ${error}`,
+          },
+        },
+      };
+    }
+  } else {
+    // Settle-all: wait for all steps
+    const results = await Promise.all(promises);
+
+    const successes: TOut[] = [];
+    const failures: Array<WorkflowError | TErr> = [];
+
+    for (const result of results) {
+      if (result.ok) {
+        successes.push(result.value);
+      } else {
+        failures.push(result.error);
+      }
+    }
+
+    return { mode: "settle-all", successes, failures };
+  }
 }
 
 /**
