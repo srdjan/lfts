@@ -270,6 +270,215 @@ See [DISTRIBUTED_GUIDE.md](./DISTRIBUTED_GUIDE.md) for complete documentation, b
 
 ---
 
+## Workflow Orchestration (v0.11.0)
+
+**Status:** ✅ Production ready
+
+Schema-driven workflow orchestration primitives for building type-safe, validated multi-step business processes. Built on introspection APIs to enable self-documenting workflows with automatic input/output validation.
+
+**Philosophy:** "Workflows are schemas" - define your workflow steps using schemas, and the runtime handles validation, observability, and introspection automatically.
+
+### Workflow Steps
+
+Execute multi-step workflows with automatic validation:
+
+```typescript
+import {
+  type WorkflowStep,
+  executeStep,
+  Result,
+} from "./packages/lfts-type-runtime/mod.ts";
+
+const openPRStep: WorkflowStep<OpenPRInput, OpenPROutput, never> = {
+  name: "OpenPR",
+  inputSchema: OpenPRInput$,
+  outputSchema: OpenPROutput$,
+  execute: async (input) => {
+    // Business logic here
+    return Result.ok({ prId: "pr_123", status: "open", ...input });
+  },
+  metadata: {
+    stage: "open",
+    permissions: ["user", "admin"],
+  },
+};
+
+// Execute with automatic validation
+const result = await executeStep(openPRStep, prData);
+if (result.ok) {
+  console.log("Step succeeded:", result.value);
+} else {
+  // Explicit error handling (validation or execution)
+  console.error("Step failed:", result.error);
+}
+```
+
+**Workflow errors** are explicitly typed:
+```typescript
+type WorkflowError =
+  | { type: "validation_failed"; stage: string; errors: ValidationError }
+  | { type: "output_invalid"; stage: string; errors: ValidationError }
+  | { type: "workflow_stopped"; reason: string };
+```
+
+### State Machines
+
+Generic finite state machine builder for workflow state management:
+
+```typescript
+import { stateMachine, createStateMachine } from "./packages/lfts-type-runtime/mod.ts";
+
+// Builder API
+const orderFSM = stateMachine<OrderState>({ type: "draft", items: [] })
+  .transition("submit", "draft", "pending", (state) => ({
+    type: "pending",
+    submittedAt: Date.now()
+  }))
+  .transition("approve", "pending", "approved",
+    (state, approver: string) => ({
+      type: "approved",
+      approvedBy: approver,
+      approvedAt: Date.now()
+    }),
+    (state) => state.items.length > 0  // Guard condition
+  )
+  .build();
+
+// Use the state machine
+const result = orderFSM.transition("approve", "admin@example.com");
+if (result.ok) {
+  console.log("New state:", result.value.type);
+} else {
+  console.error("Transition failed:", result.error);
+}
+
+// Query valid transitions
+console.log("Valid events:", orderFSM.getValidEvents());
+console.log("Can approve?", orderFSM.can("approve"));
+```
+
+**State machine features:**
+- ✅ Type-safe transitions using discriminated unions
+- ✅ Guard conditions for conditional transitions
+- ✅ Payload support for transition data
+- ✅ State introspection (`can()`, `getValidEvents()`)
+- ✅ Builder API and config-based creation
+- ✅ Reset to initial state
+
+### Workflow Analysis
+
+Runtime introspection of workflow structure:
+
+```typescript
+import { analyzeWorkflow } from "./packages/lfts-type-runtime/mod.ts";
+
+const analysis = analyzeWorkflow([openPRStep, reviewPRStep, mergePRStep]);
+
+// Returns:
+// [
+//   {
+//     name: "OpenPR",
+//     inputFields: [
+//       { name: "title", required: true, constraints: ["minLength"] },
+//       { name: "description", required: true, constraints: ["minLength"] },
+//       { name: "branch", required: true, constraints: ["pattern"] }
+//     ],
+//     outputFields: ["prId", "status", "title", "checksRequired"],
+//     metadata: { stage: "open", permissions: ["user", "admin"] }
+//   },
+//   ...
+// ]
+```
+
+### Observable Workflows
+
+Built-in observability hooks for debugging and monitoring:
+
+```typescript
+import { inspectStep, createObservableSchema } from "./packages/lfts-type-runtime/mod.ts";
+
+// Wrap step with logging
+const observableStep = inspectStep(openPRStep, {
+  logInput: true,
+  logOutput: true
+});
+
+// Validation events automatically logged to console:
+// ✓ OpenPR-Input: validation passed { timestamp: ..., properties: [...] }
+// ✓ OpenPR-Output: validation passed { timestamp: ..., properties: [...] }
+const result = await executeStep(observableStep, data);
+```
+
+### Workflow Registry
+
+Discovery and querying of workflow steps:
+
+```typescript
+import { createWorkflowRegistry } from "./packages/lfts-type-runtime/mod.ts";
+
+const registry = createWorkflowRegistry();
+
+registry.register(openPRStep, { stage: "open", permissions: ["user"] });
+registry.register(reviewPRStep, { stage: "review", permissions: ["admin"] });
+
+// Find steps by metadata
+const adminSteps = registry.find(step =>
+  step.metadata?.permissions?.includes("admin")
+);
+
+// Find by name
+const reviewStep = registry.findByName("ReviewPR");
+```
+
+### Code Generation
+
+Generate documentation, diagrams, and tests from workflow definitions:
+
+```typescript
+import {
+  generateWorkflowDocs,
+  generateWorkflowDiagram,
+  generateWorkflowTests
+} from "./packages/lfts-codegen/mod.ts";
+
+// Generate Markdown documentation
+const docs = generateWorkflowDocs([openPRStep, reviewPRStep, mergePRStep], {
+  title: "GitHub PR Workflow",
+  includeConstraints: true
+});
+await Deno.writeTextFile("workflow-docs.md", docs);
+
+// Generate Mermaid flowchart
+const diagram = generateWorkflowDiagram([openPRStep, reviewPRStep, mergePRStep], {
+  direction: "LR",
+  includeFields: true
+});
+await Deno.writeTextFile("workflow-diagram.md", diagram);
+
+// Generate test scaffolding
+const tests = generateWorkflowTests([openPRStep, reviewPRStep, mergePRStep], {
+  framework: "deno",
+  includeValidationTests: true
+});
+await Deno.writeTextFile("workflow.test.ts", tests);
+```
+
+**Files:**
+- Runtime implementation: [`workflow.ts`](../packages/lfts-type-runtime/workflow.ts) (~397 lines)
+- State machine: [`state-machine.ts`](../packages/lfts-type-runtime/state-machine.ts) (~347 lines)
+- Code generators: [`workflow.ts`](../packages/lfts-codegen/workflow.ts) (~590 lines)
+- Tests: [`workflow.test.ts`](../packages/lfts-type-runtime/workflow.test.ts) (15/15 passing)
+- Tests: [`state-machine.test.ts`](../packages/lfts-type-runtime/state-machine.test.ts) (16/16 passing)
+- Tests: [`workflow.test.ts`](../packages/lfts-codegen/workflow.test.ts) (35/35 passing)
+
+**Test Coverage:** 66/66 tests passing (100%)
+
+**Example:** See [examples/11-workflow-orchestration](../examples/11-workflow-orchestration/) for complete PR review workflow with all patterns.
+
+**Documentation:** See [blog-workflow-metadata.md](./blog-workflow-metadata.md) for detailed guide with real-world patterns.
+
+---
+
 ## Core Runtime Features (v0.6.0)
 
 ### 1. Schema Introspection API (v0.6.0)

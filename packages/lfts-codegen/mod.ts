@@ -13,3 +13,6 @@ export type { FormConfig, FormField } from "./form-config.ts";
 
 export { generateMockData } from "./mock-data.ts";
 export type { MockOptions } from "./mock-data.ts";
+
+export { generateWorkflowDocs, generateWorkflowDiagram, generateWorkflowTests } from "./workflow.ts";
+export type { WorkflowDocsOptions, WorkflowDiagramOptions, WorkflowTestOptions } from "./workflow.ts";

@@ -99,7 +99,7 @@ Deno.test("createStateMachine: guard blocks transition", () => {
       submit: {
         from: "draft",
         to: "pending",
-        guard: (state) => state.items.length > 0, // Must have items
+        guard: (state) => (state.type === "draft" && state.items.length > 0), // Must have items
         transform: (state) => ({
           type: "pending",
           submittedAt: Date.now(),
@@ -123,7 +123,7 @@ Deno.test("createStateMachine: guard allows transition", () => {
       submit: {
         from: "draft",
         to: "pending",
-        guard: (state) => state.items.length > 0,
+        guard: (state) => (state.type === "draft" && state.items.length > 0),
         transform: (state) => ({
           type: "pending",
           submittedAt: Date.now(),
@@ -157,7 +157,7 @@ Deno.test("createStateMachine: transition with payload", () => {
 
   const result = fsm.transition<string>("approve", "admin@example.com");
   assertEquals(result.ok, true);
-  if (result.ok) {
+  if (result.ok && result.value.type === "approved") {
     assertEquals(result.value.type, "approved");
     assertEquals(result.value.approvedBy, "admin@example.com");
   }
@@ -280,7 +280,7 @@ Deno.test("stateMachine: builder with guards", () => {
       "draft",
       "pending",
       (state) => ({ type: "pending", submittedAt: Date.now() }),
-      (state) => state.items.length > 0
+      (state) => (state.type === "draft" && state.items.length > 0)
     )
     .build();
 
@@ -302,7 +302,7 @@ Deno.test("complex: circuit breaker pattern", () => {
       fail: {
         from: "closed",
         to: "open",
-        guard: (state) => state.failureCount >= 4, // Open after 5 failures
+        guard: (state) => (state.type === "closed" && state.failureCount >= 4), // Open after 5 failures
         transform: (state) => ({ type: "open", openedAt: Date.now() }),
       },
       recordFailure: {
@@ -310,7 +310,7 @@ Deno.test("complex: circuit breaker pattern", () => {
         to: "closed",
         transform: (state) => ({
           type: "closed",
-          failureCount: state.failureCount + 1,
+          failureCount: state.type === "closed" ? state.failureCount + 1 : 0,
         }),
       },
       halfOpen: {
@@ -321,7 +321,7 @@ Deno.test("complex: circuit breaker pattern", () => {
       success: {
         from: "half_open",
         to: "closed",
-        guard: (state) => state.successCount >= 1, // Close after 2 successes
+        guard: (state) => (state.type === "half_open" && state.successCount >= 1), // Close after 2 successes
         transform: () => ({ type: "closed", failureCount: 0 }),
       },
       recordSuccess: {
@@ -329,7 +329,7 @@ Deno.test("complex: circuit breaker pattern", () => {
         to: "half_open",
         transform: (state) => ({
           type: "half_open",
-          successCount: state.successCount + 1,
+          successCount: state.type === "half_open" ? state.successCount + 1 : 0,
         }),
       },
       failAgain: {
@@ -345,7 +345,10 @@ Deno.test("complex: circuit breaker pattern", () => {
     breaker.transition("recordFailure");
   }
   assertEquals(breaker.getStateType(), "closed");
-  assertEquals(breaker.getState().failureCount, 4);
+  const closedState = breaker.getState();
+  if (closedState.type === "closed") {
+    assertEquals(closedState.failureCount, 4);
+  }
 
   // 5th failure opens circuit
   const openResult = breaker.transition("fail");
@@ -425,8 +428,9 @@ Deno.test("complex: order workflow with cancellation", () => {
   // Ship order
   order.transition<string>("ship", "TRACK123");
   assertEquals(order.getStateType(), "shipped");
-  if (order.getState().type === "shipped") {
-    assertEquals(order.getState().trackingNumber, "TRACK123");
+  const shippedState = order.getState();
+  if (shippedState.type === "shipped") {
+    assertEquals(shippedState.trackingNumber, "TRACK123");
   }
 });
 
@@ -448,7 +452,7 @@ Deno.test("complex: cancellation from different states", () => {
 
   const result = order1.transition<string>("cancel", "Out of stock");
   assertEquals(result.ok, true);
-  if (result.ok) {
+  if (result.ok && result.value.type === "cancelled") {
     assertEquals(result.value.type, "cancelled");
     assertEquals(result.value.reason, "Out of stock");
   }

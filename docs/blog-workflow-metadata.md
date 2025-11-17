@@ -54,44 +54,52 @@ The `withMetadata()` wrapper adds custom properties to schemas without affecting
 Here's the cool part: you can build a generic step executor that validates inputs and outputs automatically:
 
 ```typescript
+import { validateSafe, type TypeObject, Result } from "lfts-runtime";
+
 type WorkflowStep<TIn, TOut, TErr> = {
   name: string;
-  inputSchema: Type<TIn>;
-  outputSchema: Type<TOut>;
-  execute: (input: TIn) => AsyncResult<TOut, TErr>;
+  inputSchema: TypeObject;
+  outputSchema: TypeObject;
+  execute: (input: TIn) => Promise<Result<TOut, TErr>>;
 };
 
 async function executeStep<TIn, TOut, TErr>(
   step: WorkflowStep<TIn, TOut, TErr>,
   input: unknown
-): AsyncResult<TOut, WorkflowError | TErr> {
+): Promise<Result<TOut, WorkflowError | TErr>> {
   // Validate input against schema
-  const inputResult = step.inputSchema.validateSafe(input);
+  const inputResult = validateSafe(step.inputSchema, input);
   if (!inputResult.ok) {
-    return Result.err({
-      type: "validation_failed" as const,
-      stage: step.name,
-      errors: inputResult.error
-    });
+    return {
+      ok: false,
+      error: {
+        type: "validation_failed" as const,
+        stage: step.name,
+        errors: inputResult.error
+      }
+    };
   }
 
   // Execute the step
-  const result = await step.execute(inputResult.value);
+  const result = await step.execute(inputResult.value as TIn);
   if (!result.ok) {
-    return Result.err(result.error);
+    return result;
   }
 
   // Validate output against schema
-  const outputResult = step.outputSchema.validateSafe(result.value);
+  const outputResult = validateSafe(step.outputSchema, result.value);
   if (!outputResult.ok) {
-    return Result.err({
-      type: "output_invalid" as const,
-      stage: step.name,
-      errors: outputResult.error
-    });
+    return {
+      ok: false,
+      error: {
+        type: "output_invalid" as const,
+        stage: step.name,
+        errors: outputResult.error
+      }
+    };
   }
 
-  return Result.ok(outputResult.value);
+  return { ok: true, value: outputResult.value as TOut };
 }
 ```
 
@@ -102,25 +110,32 @@ This means your business logic never sees invalid data. Input validation happens
 The `inspect()` hook lets you observe validation without changing the schemas. Perfect for logging workflow transitions:
 
 ```typescript
+import { inspect, type TypeObject, type ValidationError } from "lfts-runtime";
+
 function createObservableSchema<T>(
-  schema: Type<T>,
+  schema: TypeObject,
   stageName: string
-): Type<T> {
-  return inspect(schema, (ctx) => {
+): TypeObject {
+  const inspected = inspect(schema, (ctx) => {
     ctx.onSuccess((value) => {
       console.log(`✓ ${stageName}: validation passed`, {
         timestamp: new Date().toISOString(),
-        properties: Object.keys(value as object)
+        properties: typeof value === "object" && value !== null
+          ? Object.keys(value)
+          : []
       });
     });
 
-    ctx.onFailure((errors) => {
+    ctx.onFailure((error: ValidationError) => {
       console.error(`✗ ${stageName}: validation failed`, {
         timestamp: new Date().toISOString(),
-        errors: errors.map(e => e.message)
+        error: error.message || String(error)
       });
     });
   });
+
+  // Return the underlying schema bytecode
+  return inspected.schema;
 }
 
 // Wrap your schemas with observability
@@ -276,10 +291,20 @@ Look at what happened here: the workflow is self-validating. You can't pass a PR
 To me is interesting that you can introspect the workflow itself by examining schema metadata:
 
 ```typescript
+import { introspect, getRefinements } from "lfts-runtime";
+
 function analyzeWorkflow(steps: WorkflowStep<any, any, any>[]) {
   return steps.map(step => {
-    const inputInfo = step.inputSchema.inspect();
-    const outputInfo = step.outputSchema.inspect();
+    let inputInfo = introspect(step.inputSchema);
+    let outputInfo = introspect(step.outputSchema);
+
+    // Unwrap metadata wrappers
+    while (inputInfo.kind === "metadata") {
+      inputInfo = introspect(inputInfo.inner);
+    }
+    while (outputInfo.kind === "metadata") {
+      outputInfo = introspect(outputInfo.inner);
+    }
 
     return {
       name: step.name,

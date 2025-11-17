@@ -256,8 +256,16 @@ export function analyzeWorkflow(
   steps: WorkflowStep<any, any, any>[]
 ): WorkflowStepAnalysis[] {
   return steps.map((step) => {
-    const inputInfo = introspect(step.inputSchema);
-    const outputInfo = introspect(step.outputSchema);
+    let inputInfo = introspect(step.inputSchema);
+    let outputInfo = introspect(step.outputSchema);
+
+    // Unwrap metadata wrappers
+    while (inputInfo.kind === "metadata") {
+      inputInfo = introspect(inputInfo.inner);
+    }
+    while (outputInfo.kind === "metadata") {
+      outputInfo = introspect(outputInfo.inner);
+    }
 
     return {
       name: step.name,
