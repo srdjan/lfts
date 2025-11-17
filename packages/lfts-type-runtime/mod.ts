@@ -2778,6 +2778,16 @@ export type {
   WorkflowRegistry,
   RetryConfig,
   WorkflowStepMetadata,
+  WorkflowMetadataLink,
+  StageKind,
+  HtmxRouteSpec,
+  HtmxRouteMethod,
+  HtmxRouteResponse,
+  HtmxRouteRequest,
+  HtmxRouteHandler,
+  HtmxFragmentRenderer,
+  HtmxHeadRenderer,
+  FullStackStageUiMetadata,
   ParallelStepInput,
   ParallelMode,
   ParallelResult,
@@ -2791,6 +2801,24 @@ export {
   inspectStep,
   executeStepsInParallel,
 } from "./workflow.ts";
+
+export type {
+  StageDefinition,
+  StageDefinitionInfo,
+  StageCatalog,
+  BackendFunctionStageConfig,
+  FullStackHtmxStageConfig,
+} from "./stage-types.ts";
+
+export {
+  STAGE_DEFINITION,
+  defineBackendFunctionStage,
+  defineFullStackHtmxStage,
+  createStageCatalog,
+  isStageDefinition,
+  getStageDefinitionInfo,
+  registerHtmxStageRoutes,
+} from "./stage-types.ts";
 
 // ============================================================================
 // State Machine (v0.11.0)

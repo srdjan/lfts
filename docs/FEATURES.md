@@ -990,6 +990,58 @@ if (outcome.ok) {
 
 ---
 
+#### Stage Catalog & Prebuilt Stage Types (v0.14.0)
+
+- `defineBackendFunctionStage()` seals a pure backend step with declarative metadata (owners, tags, port dependencies) while `defineFullStackHtmxStage()` bundles a workflow step with a fragment renderer and required HTMX routes.
+- `createStageCatalog()` enforces unique names and lets you list stages by `stageKind` ("backend_function" vs "fullstack_htmx").
+- `graphBuilder.stageFromDefinition()` consumes these stage objects directly, so DAGs stay aligned with the catalog.
+- `registerHtmxStageRoutes(stage, register)` makes UI plumbing explicit: feed the collected route specs into whatever HTTP adapter you use.
+
+```ts
+import {
+  createStageCatalog,
+  defineBackendFunctionStage,
+  defineFullStackHtmxStage,
+  registerHtmxStageRoutes,
+  Result,
+  t,
+} from "packages/lfts-type-runtime/mod.ts";
+import { graphBuilder, fromStage } from "packages/lfts-type-runtime/workflow-graph.ts";
+
+const verifyStage = defineBackendFunctionStage({
+  name: "VerifySpend",
+  inputSchema: t.object({ requestId: t.string(), cost: t.number().min(1) }).bc,
+  outputSchema: t.object({ requestId: t.string(), requiresHuman: t.boolean() }).bc,
+  execute: async (input) => Result.ok({ ...input, requiresHuman: input.cost > 1000 }),
+});
+
+const approvalStage = defineFullStackHtmxStage({
+  name: "ManualApproval",
+  inputSchema: verifyStage.outputSchema,
+  outputSchema: t.object({ requestId: t.string(), status: t.literal("pending" ) }).bc,
+  fragment: (state) => `<section>Approve ${state.requestId}?</section>`,
+  routes: [{ method: "POST", path: "/approvals/:id/decision", handler: () => ({ status: 200, body: "ok" }) }],
+  execute: async (input) => Result.ok({ requestId: input.requestId, status: "pending" }),
+});
+
+const catalog = createStageCatalog([verifyStage, approvalStage]);
+const workflow = graphBuilder<{ requestId: string; cost: number }>()
+  .seed({ requestId: "req_1", cost: 1800 })
+  .stageFromDefinition(verifyStage, { name: "verify", resolve: (ctx) => ctx.seed })
+  .stageFromDefinition(approvalStage, {
+    name: "manualGate",
+    dependsOn: ["verify"],
+    resolve: fromStage("verify"),
+    when: (ctx) => ctx.get<{ requiresHuman: boolean }>("verify").requiresHuman,
+  });
+
+registerHtmxStageRoutes(approvalStage, (route) => console.log(`Mount ${route.method} ${route.path}`));
+```
+
+**Testing:** Covered via `stage-types.test.ts` plus new builder coverage inside `workflow-graph.test.ts`.
+
+---
+
 ### 7. Prebuilt Type Annotations (v0.4.0)
 
 **Status:** ✅ Fully implemented

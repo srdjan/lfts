@@ -79,17 +79,101 @@ export type RetryConfig<TErr> = {
 };
 
 /**
+ * Canonical stage kinds supported by the workflow runtime.
+ */
+export type StageKind = "backend_function" | "fullstack_htmx";
+
+/**
+ * Link metadata attached to workflow steps for docs/observability.
+ */
+export type WorkflowMetadataLink = {
+  readonly rel: string;
+  readonly href: string;
+  readonly title?: string;
+};
+
+export type HtmxRouteMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+export type HtmxRouteResponse = {
+  readonly status?: number;
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly body: string;
+};
+
+export type HtmxRouteRequest<TPayload = unknown, TContext = unknown> = {
+  readonly payload: TPayload;
+  readonly params: Readonly<Record<string, string>>;
+  readonly context: TContext;
+};
+
+export type HtmxRouteHandler<TPayload = unknown, TContext = unknown> = (
+  request: HtmxRouteRequest<TPayload, TContext>,
+) => HtmxRouteResponse | Promise<HtmxRouteResponse>;
+
+export type HtmxRouteSpec<TPayload = unknown, TContext = unknown> = {
+  readonly method: HtmxRouteMethod;
+  readonly path: string;
+  readonly payloadSchema?: TypeObject;
+  readonly description?: string;
+  readonly handler: HtmxRouteHandler<TPayload, TContext>;
+};
+
+export type HtmxFragmentRenderer<TProps = unknown> = (
+  props: TProps,
+) => string | Promise<string>;
+
+export type HtmxHeadRenderer<TProps = unknown> =
+  | string
+  | ((props: TProps) => string | Promise<string>);
+
+export type FullStackStageUiMetadata = {
+  readonly fragment: HtmxFragmentRenderer<unknown>;
+  readonly head?: HtmxHeadRenderer<unknown>;
+  readonly hydrate?: (output: unknown) => unknown;
+  readonly routes: readonly HtmxRouteSpec[];
+};
+
+export type WorkflowStageMetadataBase<TErr> = {
+  /** Retry configuration for automatic retry on failure */
+  retry?: RetryConfig<TErr>;
+  /** Human readable summary */
+  description?: string;
+  /** Owning team emails/ids */
+  owners?: readonly string[];
+  /** Query tags */
+  tags?: readonly string[];
+  /** Optional canonical links */
+  links?: readonly WorkflowMetadataLink[];
+  /** Stage classification */
+  stageKind?: StageKind;
+  /** Additional custom metadata */
+  [key: string]: unknown;
+};
+
+export type BackendWorkflowMetadata<TErr> = WorkflowStageMetadataBase<TErr> & {
+  stageKind: "backend_function";
+  /** Declared port dependencies */
+  ports?: readonly string[];
+  /** Declared capability dependencies */
+  capabilities?: readonly string[];
+  /** Whether the stage expects to be run sync/async */
+  expects?: "sync" | "async";
+};
+
+export type FullStackWorkflowMetadata<TErr> = WorkflowStageMetadataBase<TErr> & {
+  stageKind: "fullstack_htmx";
+  ui: FullStackStageUiMetadata;
+};
+
+/**
  * Metadata for workflow steps
  *
  * @template TErr - Error type for the step execution
  */
-export type WorkflowStepMetadata<TErr> = {
-  /** Retry configuration for automatic retry on failure */
-  retry?: RetryConfig<TErr>;
-
-  /** Additional custom metadata */
-  [key: string]: unknown;
-};
+export type WorkflowStepMetadata<TErr> =
+  | BackendWorkflowMetadata<TErr>
+  | FullStackWorkflowMetadata<TErr>
+  | WorkflowStageMetadataBase<TErr>;
 
 /**
  * A single step in a workflow with typed inputs and outputs

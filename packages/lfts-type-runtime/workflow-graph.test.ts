@@ -7,6 +7,7 @@ import {
   graphBuilder,
   matchRoute,
 } from "./workflow-graph.ts";
+import { defineBackendFunctionStage } from "./stage-types.ts";
 
 type UserSeed = { name: string; email: string };
 
@@ -139,6 +140,31 @@ Deno.test("graphBuilder executes DAG workflows", async () => {
       3,
     );
   }
+});
+
+Deno.test("graphBuilder.stageFromDefinition wires prebuilt stages", async () => {
+  const normalizeStage = defineBackendFunctionStage({
+    name: "TrimSeed",
+    inputSchema: t.object({ message: t.string() }).bc,
+    outputSchema: t.object({ normalized: t.string() }).bc,
+    execute: async (input: { message: string }) =>
+      Result.ok({ normalized: input.message.trim().toUpperCase() }),
+  });
+
+  const workflow = graphBuilder<{ message: string }>()
+    .seed({ message: "  ping  " })
+    .stageFromDefinition(normalizeStage, {
+      name: "normalize",
+      resolve: (ctx) => ctx.seed,
+    })
+    .build();
+
+  const result = await workflow.run();
+  if (!result.ok) {
+    throw new Error(`workflow failed: ${JSON.stringify(result.error)}`);
+  }
+  const output = result.value.outputs.normalize as { normalized: string };
+  assertEquals(output.normalized, "PING");
 });
 
 Deno.test("graphBuilder propagates failures and blocks dependents", async () => {

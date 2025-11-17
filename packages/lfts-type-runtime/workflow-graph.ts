@@ -5,6 +5,7 @@ import {
   type WorkflowError,
   type WorkflowStep,
 } from "./workflow.ts";
+import type { StageDefinition } from "./stage-types.ts";
 
 const now =
   typeof performance !== "undefined" && typeof performance.now === "function"
@@ -129,6 +130,12 @@ export interface WorkflowGraphBuilder<TSeed> {
   stage<TIn, TOut, TErr>(
     config: WorkflowGraphStageConfig<TSeed, TIn, TOut, TErr>,
   ): WorkflowGraphBuilder<TSeed>;
+  stageFromDefinition<TIn, TOut, TErr>(
+    definition: StageDefinition<TIn, TOut, TErr>,
+    options?: Omit<WorkflowGraphStageConfig<TSeed, TIn, TOut, TErr>, "step"> & {
+      readonly name?: string;
+    },
+  ): WorkflowGraphBuilder<TSeed>;
   build(): WorkflowGraph;
 }
 
@@ -174,6 +181,27 @@ class WorkflowGraphBuilderImpl<TSeed> implements WorkflowGraphBuilder<TSeed> {
     });
     this.#stageSet.add(name);
     return this;
+  }
+
+  stageFromDefinition<TIn, TOut, TErr>(
+    definition: StageDefinition<TIn, TOut, TErr>,
+    options?: Omit<WorkflowGraphStageConfig<TSeed, TIn, TOut, TErr>, "step"> & {
+      readonly name?: string;
+    },
+  ): WorkflowGraphBuilder<TSeed> {
+    type StageOptions = Omit<WorkflowGraphStageConfig<TSeed, TIn, TOut, TErr>, "step"> & {
+      readonly name?: string;
+    };
+    const opts = (options ?? {}) as StageOptions;
+    const name = opts.name ?? definition.name;
+    return this.stage({
+      name,
+      step: definition,
+      dependsOn: opts.dependsOn,
+      resolve: opts.resolve,
+      when: opts.when,
+      metadata: opts.metadata,
+    });
   }
 
   build(): WorkflowGraph {

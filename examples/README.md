@@ -13,6 +13,9 @@ This directory contains a progressive series of runnable examples. Work through 
 | 07 | `07-async-result`          | Async error handling with `AsyncResult` helpers         |
 | 08 | `08-pattern-matching`      | Exhaustive `match()` usage over ADTs                    |
 | 09 | `09-mini-application`      | Putting it all together in a tiny hexagonal script      |
+| 10 | `10-distributed-execution` | Resilient HTTP helpers, retries, and capability wiring   |
+| 11 | `11-workflow-orchestration`| Workflow graphs, conditional stages, DAG snapshots      |
+| 12 | `12-stage-types`           | Stage catalogs with backend + HTMX-driven UI components  |
 
 ## Usage pattern
 
