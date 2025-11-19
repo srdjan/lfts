@@ -4,11 +4,82 @@ All notable changes to the LFTS compiler project are documented here.
 
 ## [Unreleased]
 
+##[0.15.0] - 2025-11-19
+
 ### Added
 
-- **Workflow graph builder (experimental):** New `graphBuilder()` helper in `packages/lfts-type-runtime/workflow-graph.ts` lets you describe DAG-driven workflows with named stages, dependency metadata, and automatic topological scheduling. Seeds accept values/promises/`Result`, the runner emits per-stage snapshots, and `run()` returns `Result<{ seed, outputs, snapshots }, WorkflowGraphRunFailure>` while honoring fail-fast semantics.
-- **Workflow resolve helpers:** Added `fromStage()` / `fromStages()` utilities to simplify `resolve` functions inside DAG stages by safely projecting outputs from dependencies without repeating `ctx.get()` boilerplate.
-- **Stage catalogs + HTMX stages:** New `defineBackendFunctionStage()` / `defineFullStackHtmxStage()` helpers emit canonical stage objects with `stageKind` metadata, HTMX fragments, and route specs. Pair them with `createStageCatalog()`, `graphBuilder.stageFromDefinition()`, and `registerHtmxStageRoutes()` to keep workflows, documentation, and routers in sync.
+#### MCP Server - AI Agent Integration (Production Ready)
+
+Expose LFTS workflow catalogs to AI agents via the Model Context Protocol (MCP), enabling conversational workflow invocation with full type safety and automatic validation.
+
+**Philosophy:** "Metadata as Documentation" - Rich tool descriptions are auto-generated from stage metadata (owners, tags, retry policies, links), making workflows self-documenting for AI agents.
+
+**Key Features:**
+- 🤖 **AI Agent Integration** - Works with Claude Desktop, Anthropic CLI, any MCP-compatible agent
+- 🔒 **Type-Safe Tool Invocation** - Automatic input/output validation via LFTS schemas
+- 📊 **Metadata-Driven Descriptions** - Owners, tags, retry configs → rich tool descriptions
+- 🔍 **Catalog Browsing** - Discover workflows via MCP resources (filter by tag/kind/name)
+- ⚡ **Zero-Overhead** - Direct execution, no HTTP/RPC overhead for in-process usage
+- 📈 **Observability** - Execution metadata (timing, status) included in responses
+
+**Core API:**
+
+```typescript
+import { createMcpServer } from "lfts-mcp-server";
+
+const server = createMcpServer(catalog, {
+  name: "payment-workflows",
+  includeMetadata: true,
+  includeRetryInfo: true,
+});
+
+// List tools (for MCP protocol)
+const tools = server.listTools();
+
+// Execute tool
+const result = await server.callTool("ProcessPayment", {
+  amount: 100,
+  customerId: "cust_123",
+});
+
+// Browse catalog resources
+const paymentStages = server.readResource("lfts://catalog/tags/payment");
+const stats = server.readResource("lfts://catalog/stats");
+```
+
+**Resource URIs:**
+- `lfts://catalog/stages` - List all stages
+- `lfts://catalog/kinds/{kind}` - Filter by kind (backend_function/fullstack_htmx)
+- `lfts://catalog/tags/{tag}` - Filter by tag
+- `lfts://catalog/stages/{name}` - Get specific stage
+- `lfts://catalog/stats` - Catalog statistics
+
+**Implementation:**
+- New package: `packages/lfts-mcp-server/` (~598 lines)
+  - `server.ts` - Core MCP server (167 lines)
+  - `tool-builder.ts` - Stage → MCP tool converter (161 lines)
+  - `resource-builder.ts` - Catalog browsing API (193 lines)
+  - `types.ts` - Type definitions (77 lines)
+- Tests: `server.test.ts` (16/16 passing, 100% coverage)
+- Example: `examples/13-mcp-server/` - Complete working demo
+- Documentation: `docs/MCP_GUIDE.md` (~1,200 lines)
+
+**Integration with MCP Protocol:**
+
+Integrates with `@modelcontextprotocol/sdk` for full protocol support:
+- Tools: `listTools()`, `callTool()`
+- Resources: `listResources()`, `readResource()`
+- Stdio transport for Claude Desktop integration
+- HTTP/WebSocket transports supported
+
+**Documentation:** See [MCP_GUIDE.md](docs/MCP_GUIDE.md) and [FEATURES.md](docs/FEATURES.md#mcp-server---ai-agent-integration-v0150) for complete documentation.
+
+---
+
+### Changed
+
+- **Workflow graph builder:** Now stable (removed experimental tag) after extensive testing
+- **Stage catalogs:** Stable integration with MCP server
 
 ## [0.10.0] - 2025-11-10
 

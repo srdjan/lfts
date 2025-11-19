@@ -1043,6 +1043,168 @@ registerHtmxStageRoutes(approvalStage, (route) => console.log(`Mount ${route.met
 
 ---
 
+#### MCP Server - AI Agent Integration (v0.15.0)
+
+**Status:** ✅ Production ready
+
+Expose LFTS workflow catalogs to AI agents via the Model Context Protocol (MCP), enabling conversational workflow invocation with full type safety and automatic validation.
+
+**Philosophy:** "Metadata as Documentation" - Rich tool descriptions are auto-generated from stage metadata (owners, tags, retry policies, links), making workflows self-documenting for AI agents.
+
+**Key Features:**
+- 🤖 **AI Agent Integration** - Works with Claude Desktop, Anthropic CLI, any MCP-compatible agent
+- 🔒 **Type-Safe Tool Invocation** - Automatic input/output validation via LFTS schemas
+- 📊 **Metadata-Driven Descriptions** - Owners, tags, retry configs → rich tool descriptions
+- 🔍 **Catalog Browsing** - Discover workflows via MCP resources (filter by tag/kind/name)
+- ⚡ **Zero-Overhead** - Direct execution, no HTTP/RPC overhead for in-process usage
+- 📈 **Observability** - Execution metadata (timing, status) included in responses
+
+**Core API:**
+
+```typescript
+import { createMcpServer } from "lfts-mcp-server";
+import { createStageCatalog, defineBackendFunctionStage } from "lfts-type-runtime";
+
+// Create catalog with rich metadata
+const processPaymentStage = defineBackendFunctionStage({
+  name: "ProcessPayment",
+  inputSchema: PaymentInput$,
+  outputSchema: PaymentOutput$,
+  execute: async (input) => Result.ok({ transactionId: "..." }),
+
+  // Metadata for AI agents
+  description: "Process customer payment with fraud detection and authorization",
+  owners: ["payments-team@example.com"],
+  tags: ["payment", "critical"],
+  retry: { maxAttempts: 3, shouldRetry: (err) => err.type === "timeout" },
+  links: [
+    { rel: "documentation", href: "https://docs.../payments", title: "Guide" }
+  ],
+});
+
+const catalog = createStageCatalog([processPaymentStage, refundStage]);
+
+// Create MCP server
+const server = createMcpServer(catalog, {
+  name: "payment-workflows",
+  version: "1.0.0",
+  includeMetadata: true,      // Include execution timing
+  includeRetryInfo: true,      // Document retry policies
+});
+
+// List tools (for MCP protocol)
+const tools = server.listTools();
+// [
+//   {
+//     name: "ProcessPayment",
+//     description: "Process customer payment...\n\n**Owners:** payments-team@example.com\n...",
+//     inputSchema: { type: "object", properties: {...}, required: [...] }
+//   }
+// ]
+
+// Execute tool
+const result = await server.callTool("ProcessPayment", {
+  amount: 100,
+  customerId: "cust_123",
+});
+
+if (result.success) {
+  console.log(result.data);           // { transactionId: "..." }
+  console.log(result.metadata.durationMs); // Execution time
+} else {
+  console.log(result.error);          // Typed error
+}
+
+// Browse catalog resources
+const paymentStages = server.readResource("lfts://catalog/tags/payment");
+const backendStages = server.readResource("lfts://catalog/kinds/backend_function");
+const stats = server.readResource("lfts://catalog/stats");
+```
+
+**Resource URIs:**
+- `lfts://catalog/stages` - List all stages
+- `lfts://catalog/kinds/backend_function` - Backend function stages only
+- `lfts://catalog/kinds/fullstack_htmx` - HTMX stages only
+- `lfts://catalog/tags/{tag}` - Stages with specific tag
+- `lfts://catalog/stages/{name}` - Specific stage by name
+- `lfts://catalog/stats` - Catalog statistics (counts, tags, owners)
+
+**Integration with MCP Protocol:**
+
+```typescript
+import { Server } from "@modelcontextprotocol/sdk/server";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio";
+
+const mcpServer = new Server({ name: "payment-workflows", version: "1.0.0" }, {
+  capabilities: { tools: {}, resources: {} }
+});
+
+// Register handlers
+mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: lftsServer.listTools()
+}));
+
+mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
+  const result = await lftsServer.callTool(request.params.name, request.params.arguments);
+  if (result.success) {
+    return { content: [{ type: "text", text: JSON.stringify(result.data) }] };
+  } else {
+    throw new McpError(ErrorCode.InternalError, JSON.stringify(result.error));
+  }
+});
+
+// Start stdio transport for Claude Desktop
+const transport = new StdioServerTransport();
+await mcpServer.connect(transport);
+```
+
+**Metadata → Tool Description Mapping:**
+
+Stage metadata automatically enriches MCP tool descriptions:
+
+| Metadata Field | Description Section |
+|---------------|---------------------|
+| `description` | Main description |
+| `owners` | **Owners:** comma-separated |
+| `tags` | **Tags:** comma-separated |
+| `retry` | **Retry Configuration:** (max attempts, delays, etc.) |
+| `links` | **Links:** markdown links with rel type |
+| `ports` | **Port Dependencies:** comma-separated |
+| `capabilities` | **Capabilities:** comma-separated |
+| `expects` | **Execution Mode:** sync/async |
+
+**Files:**
+- Core implementation: [`packages/lfts-mcp-server/`](../packages/lfts-mcp-server/)
+  - `server.ts` - MCP server (167 lines)
+  - `tool-builder.ts` - Stage → MCP tool converter (161 lines)
+  - `resource-builder.ts` - Catalog browsing (193 lines)
+  - `types.ts` - Type definitions (77 lines)
+- Tests: [`server.test.ts`](../packages/lfts-mcp-server/server.test.ts) (16/16 passing, 100% coverage)
+- Example: [`examples/13-mcp-server/`](../examples/13-mcp-server/) - Complete working demo
+- Guide: [MCP_GUIDE.md](MCP_GUIDE.md) - Comprehensive documentation
+
+**vs. Alternatives:**
+
+| Feature | LFTS MCP Server | OpenAPI + Function Calling | gRPC |
+|---------|-----------------|---------------------------|------|
+| **Setup** | Auto-generate from catalog | Manual OpenAPI spec | Protobuf .proto files |
+| **Type Safety** | Full TypeScript | Runtime only | Compile-time (codegen) |
+| **Validation** | Automatic (LFTS schemas) | Manual | Protobuf validation |
+| **AI Integration** | Native MCP protocol | Function calling only | Manual |
+| **Metadata** | Built-in (retry, owners, tags) | Custom extensions (x-*) | Comments only |
+| **Discoverability** | MCP resources + tools | Static spec file | Service reflection |
+
+**Use Cases:**
+- Conversational workflow invocation (Claude Desktop integration)
+- AI-powered developer tooling and automation
+- Internal tool discovery and execution
+- Type-safe function calling for LLMs
+- Self-documenting API catalogs
+
+**Documentation:** See [MCP_GUIDE.md](MCP_GUIDE.md) for complete integration guide, best practices, and examples.
+
+---
+
 ### 7. Prebuilt Type Annotations (v0.4.0)
 
 **Status:** ✅ Fully implemented
