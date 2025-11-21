@@ -2,6 +2,7 @@
 // Optional distributed execution helpers for LFTS
 // Uses existing primitives: Result, AsyncResult, schemas, ports
 
+import type { PaymentError, PaymentHandler, PaymentHttpRequest } from "./payments.ts";
 import { Result, validateSafe, type TypeObject } from "./mod.ts";
 
 /**
@@ -57,6 +58,8 @@ export type HttpOptions = {
   readonly headers?: Record<string, string>;
   /** HTTP method override (for advanced use cases) */
   readonly method?: string;
+  /** Optional handler to satisfy HTTP 402 Payment Required challenges */
+  readonly paymentHandler?: PaymentHandler;
 };
 
 /**
@@ -91,90 +94,123 @@ export type HttpOptions = {
 export async function httpGet<T>(
   url: string,
   schema: TypeObject,
+  options?: HttpOptions
+): Promise<Result<T, NetworkError>>;
+export async function httpGet<T>(
+  url: string,
+  schema: TypeObject,
+  options: HttpOptions & { paymentHandler: PaymentHandler }
+): Promise<Result<T, NetworkError | PaymentError>>;
+export async function httpGet<T>(
+  url: string,
+  schema: TypeObject,
   options: HttpOptions = {}
-): Promise<Result<T, NetworkError>> {
+): Promise<Result<T, NetworkError | PaymentError>> {
   const { timeoutMs = 5000, headers = {} } = options;
+  const paymentHandler = options.paymentHandler;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const request: PaymentHttpRequest = {
+    url,
+    method: "GET",
+    headers,
+  };
 
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "Accept": "application/json",
-        ...headers,
-      },
-      signal: controller.signal,
-    });
+  const performFetch = async (): Promise<Result<Response, NetworkError>> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    clearTimeout(timeoutId);
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "Accept": "application/json",
+          ...headers,
+        },
+        signal: controller.signal,
+      });
 
-    // Handle HTTP errors (non-2xx status)
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
+      clearTimeout(timeoutId);
+      return Result.ok(response);
+    } catch (err) {
+      clearTimeout(timeoutId);
+
+      if (err instanceof Error) {
+        if (err.name === "AbortError") {
+          return Result.err({
+            type: "timeout",
+            url,
+            ms: timeoutMs,
+          });
+        }
+
+        if (err.message.includes("ENOTFOUND") || err.message.includes("DNS")) {
+          const domain = new URL(url).hostname;
+          return Result.err({
+            type: "dns_failure",
+            domain,
+          });
+        }
+      }
+
       return Result.err({
-        type: "http_error",
+        type: "connection_refused",
         url,
-        status: response.status,
-        body,
       });
     }
+  };
 
-    // Parse response body
-    const data = await response.json().catch((err) => {
-      return Result.err({
-        type: "serialization_error",
-        message: `Failed to parse JSON: ${err.message}`,
-      });
+  const initial = await performFetch();
+  if (!initial.ok) return initial;
+
+  let response = initial.value;
+
+  if (response.status === 402 && paymentHandler) {
+    await response.body?.cancel?.();
+    const handled = await paymentHandler.onPaymentRequired({
+      response,
+      retry: performFetch,
+      request,
     });
+    if (!handled.ok) return handled;
+    response = handled.value;
+  }
 
-    // Early return if JSON parsing failed
-    if (typeof data === "object" && "ok" in data && !data.ok) {
-      return data as Result<T, NetworkError>;
-    }
-
-    // Validate response against schema
-    const validated = validateSafe<T>(schema, data);
-
-    if (!validated.ok) {
-      return Result.err({
-        type: "serialization_error",
-        message: validated.error.message,
-        path: validated.error.path,
-      });
-    }
-
-    return Result.ok(validated.value);
-  } catch (err) {
-    clearTimeout(timeoutId);
-
-    if (err instanceof Error) {
-      // Timeout via AbortController
-      if (err.name === "AbortError") {
-        return Result.err({
-          type: "timeout",
-          url,
-          ms: timeoutMs,
-        });
-      }
-
-      // DNS failure (ENOTFOUND, etc.)
-      if (err.message.includes("ENOTFOUND") || err.message.includes("DNS")) {
-        const domain = new URL(url).hostname;
-        return Result.err({
-          type: "dns_failure",
-          domain,
-        });
-      }
-    }
-
-    // Connection refused, network unreachable, etc.
+  // Handle HTTP errors (non-2xx status)
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
     return Result.err({
-      type: "connection_refused",
+      type: "http_error",
       url,
+      status: response.status,
+      body,
     });
   }
+
+  // Parse response body
+  const data = await response.json().catch((err) => {
+    return Result.err({
+      type: "serialization_error",
+      message: `Failed to parse JSON: ${err.message}`,
+    });
+  });
+
+  // Early return if JSON parsing failed
+  if (typeof data === "object" && "ok" in data && !data.ok) {
+    return data as Result<T, NetworkError>;
+  }
+
+  // Validate response against schema
+  const validated = validateSafe<T>(schema, data);
+
+  if (!validated.ok) {
+    return Result.err({
+      type: "serialization_error",
+      message: validated.error.message,
+      path: validated.error.path,
+    });
+  }
+
+  return Result.ok(validated.value);
 }
 
 /**
@@ -209,9 +245,24 @@ export async function httpPost<TRequest, TResponse>(
   requestData: TRequest,
   requestSchema: TypeObject,
   responseSchema: TypeObject,
+  options?: HttpOptions
+): Promise<Result<TResponse, NetworkError>>;
+export async function httpPost<TRequest, TResponse>(
+  url: string,
+  requestData: TRequest,
+  requestSchema: TypeObject,
+  responseSchema: TypeObject,
+  options: HttpOptions & { paymentHandler: PaymentHandler }
+): Promise<Result<TResponse, NetworkError | PaymentError>>;
+export async function httpPost<TRequest, TResponse>(
+  url: string,
+  requestData: TRequest,
+  requestSchema: TypeObject,
+  responseSchema: TypeObject,
   options: HttpOptions = {}
-): Promise<Result<TResponse, NetworkError>> {
+): Promise<Result<TResponse, NetworkError | PaymentError>> {
   const { timeoutMs = 5000, headers = {} } = options;
+  const paymentHandler = options.paymentHandler;
 
   // Validate request before sending
   const validatedRequest = validateSafe<TRequest>(requestSchema, requestData);
@@ -223,85 +274,109 @@ export async function httpPost<TRequest, TResponse>(
     });
   }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const serializedBody = JSON.stringify(requestData);
 
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        ...headers,
-      },
-      body: JSON.stringify(requestData),
-      signal: controller.signal,
-    });
+  const request: PaymentHttpRequest = {
+    url,
+    method: "POST",
+    headers,
+    body: requestData,
+  };
 
-    clearTimeout(timeoutId);
+  const performFetch = async (): Promise<Result<Response, NetworkError>> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    // Handle HTTP errors
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          ...headers,
+        },
+        body: serializedBody,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      return Result.ok(response);
+    } catch (err) {
+      clearTimeout(timeoutId);
+
+      if (err instanceof Error) {
+        if (err.name === "AbortError") {
+          return Result.err({
+            type: "timeout",
+            url,
+            ms: timeoutMs,
+          });
+        }
+
+        if (err.message.includes("ENOTFOUND") || err.message.includes("DNS")) {
+          const domain = new URL(url).hostname;
+          return Result.err({
+            type: "dns_failure",
+            domain,
+          });
+        }
+      }
+
       return Result.err({
-        type: "http_error",
+        type: "connection_refused",
         url,
-        status: response.status,
-        body,
       });
     }
+  };
 
-    // Parse response body
-    const data = await response.json().catch((err) => {
-      return Result.err({
-        type: "serialization_error",
-        message: `Failed to parse JSON response: ${err.message}`,
-      });
+  const initial = await performFetch();
+  if (!initial.ok) return initial;
+
+  let response = initial.value;
+
+  if (response.status === 402 && paymentHandler) {
+    await response.body?.cancel?.();
+    const handled = await paymentHandler.onPaymentRequired({
+      response,
+      retry: performFetch,
+      request,
     });
+    if (!handled.ok) return handled;
+    response = handled.value;
+  }
 
-    // Early return if JSON parsing failed
-    if (typeof data === "object" && "ok" in data && !data.ok) {
-      return data as Result<TResponse, NetworkError>;
-    }
-
-    // Validate response against schema
-    const validated = validateSafe<TResponse>(responseSchema, data);
-
-    if (!validated.ok) {
-      return Result.err({
-        type: "serialization_error",
-        message: validated.error.message,
-        path: validated.error.path,
-      });
-    }
-
-    return Result.ok(validated.value);
-  } catch (err) {
-    clearTimeout(timeoutId);
-
-    if (err instanceof Error) {
-      if (err.name === "AbortError") {
-        return Result.err({
-          type: "timeout",
-          url,
-          ms: timeoutMs,
-        });
-      }
-
-      if (err.message.includes("ENOTFOUND") || err.message.includes("DNS")) {
-        const domain = new URL(url).hostname;
-        return Result.err({
-          type: "dns_failure",
-          domain,
-        });
-      }
-    }
-
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
     return Result.err({
-      type: "connection_refused",
+      type: "http_error",
       url,
+      status: response.status,
+      body,
     });
   }
+
+  const data = await response.json().catch((err) => {
+    return Result.err({
+      type: "serialization_error",
+      message: `Failed to parse JSON response: ${err.message}`,
+    });
+  });
+
+  if (typeof data === "object" && "ok" in data && !data.ok) {
+    return data as Result<TResponse, NetworkError>;
+  }
+
+  const validated = validateSafe<TResponse>(responseSchema, data);
+
+  if (!validated.ok) {
+    return Result.err({
+      type: "serialization_error",
+      message: validated.error.message,
+      path: validated.error.path,
+    });
+  }
+
+  return Result.ok(validated.value);
 }
 
 /**
@@ -330,9 +405,24 @@ export async function httpPut<TRequest, TResponse>(
   requestData: TRequest,
   requestSchema: TypeObject,
   responseSchema: TypeObject,
+  options?: HttpOptions
+): Promise<Result<TResponse, NetworkError>>;
+export async function httpPut<TRequest, TResponse>(
+  url: string,
+  requestData: TRequest,
+  requestSchema: TypeObject,
+  responseSchema: TypeObject,
+  options: HttpOptions & { paymentHandler: PaymentHandler }
+): Promise<Result<TResponse, NetworkError | PaymentError>>;
+export async function httpPut<TRequest, TResponse>(
+  url: string,
+  requestData: TRequest,
+  requestSchema: TypeObject,
+  responseSchema: TypeObject,
   options: HttpOptions = {}
-): Promise<Result<TResponse, NetworkError>> {
+): Promise<Result<TResponse, NetworkError | PaymentError>> {
   const { timeoutMs = 5000, headers = {} } = options;
+  const paymentHandler = options.paymentHandler;
 
   // Validate request before sending
   const validatedRequest = validateSafe<TRequest>(requestSchema, requestData);
@@ -344,81 +434,109 @@ export async function httpPut<TRequest, TResponse>(
     });
   }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const serializedBody = JSON.stringify(requestData);
 
-  try {
-    const response = await fetch(url, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        ...headers,
-      },
-      body: JSON.stringify(requestData),
-      signal: controller.signal,
-    });
+  const request: PaymentHttpRequest = {
+    url,
+    method: "PUT",
+    headers,
+    body: requestData,
+  };
 
-    clearTimeout(timeoutId);
+  const performFetch = async (): Promise<Result<Response, NetworkError>> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
+    try {
+      const response = await fetch(url, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          ...headers,
+        },
+        body: serializedBody,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      return Result.ok(response);
+    } catch (err) {
+      clearTimeout(timeoutId);
+
+      if (err instanceof Error) {
+        if (err.name === "AbortError") {
+          return Result.err({
+            type: "timeout",
+            url,
+            ms: timeoutMs,
+          });
+        }
+
+        if (err.message.includes("ENOTFOUND") || err.message.includes("DNS")) {
+          const domain = new URL(url).hostname;
+          return Result.err({
+            type: "dns_failure",
+            domain,
+          });
+        }
+      }
+
       return Result.err({
-        type: "http_error",
+        type: "connection_refused",
         url,
-        status: response.status,
-        body,
       });
     }
+  };
 
-    const data = await response.json().catch((err) => {
-      return Result.err({
-        type: "serialization_error",
-        message: `Failed to parse JSON response: ${err.message}`,
-      });
+  const initial = await performFetch();
+  if (!initial.ok) return initial;
+
+  let response = initial.value;
+
+  if (response.status === 402 && paymentHandler) {
+    await response.body?.cancel?.();
+    const handled = await paymentHandler.onPaymentRequired({
+      response,
+      retry: performFetch,
+      request,
     });
+    if (!handled.ok) return handled;
+    response = handled.value;
+  }
 
-    if (typeof data === "object" && "ok" in data && !data.ok) {
-      return data as Result<TResponse, NetworkError>;
-    }
-
-    const validated = validateSafe<TResponse>(responseSchema, data);
-
-    if (!validated.ok) {
-      return Result.err({
-        type: "serialization_error",
-        message: validated.error.message,
-        path: validated.error.path,
-      });
-    }
-
-    return Result.ok(validated.value);
-  } catch (err) {
-    clearTimeout(timeoutId);
-
-    if (err instanceof Error) {
-      if (err.name === "AbortError") {
-        return Result.err({
-          type: "timeout",
-          url,
-          ms: timeoutMs,
-        });
-      }
-
-      if (err.message.includes("ENOTFOUND") || err.message.includes("DNS")) {
-        const domain = new URL(url).hostname;
-        return Result.err({
-          type: "dns_failure",
-          domain,
-        });
-      }
-    }
-
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
     return Result.err({
-      type: "connection_refused",
+      type: "http_error",
       url,
+      status: response.status,
+      body,
     });
   }
+
+  const data = await response.json().catch((err) => {
+    return Result.err({
+      type: "serialization_error",
+      message: `Failed to parse JSON response: ${err.message}`,
+    });
+  });
+
+  if (typeof data === "object" && "ok" in data && !data.ok) {
+    return data as Result<TResponse, NetworkError>;
+  }
+
+  const validated = validateSafe<TResponse>(responseSchema, data);
+
+  if (!validated.ok) {
+    return Result.err({
+      type: "serialization_error",
+      message: validated.error.message,
+      path: validated.error.path,
+    });
+  }
+
+  return Result.ok(validated.value);
 }
 
 /**
@@ -445,66 +563,98 @@ export async function httpPut<TRequest, TResponse>(
  */
 export async function httpDelete(
   url: string,
+  options?: HttpOptions
+): Promise<Result<void, NetworkError>>;
+export async function httpDelete(
+  url: string,
+  options: HttpOptions & { paymentHandler: PaymentHandler }
+): Promise<Result<void, NetworkError | PaymentError>>;
+export async function httpDelete(
+  url: string,
   options: HttpOptions = {}
-): Promise<Result<void, NetworkError>> {
+): Promise<Result<void, NetworkError | PaymentError>> {
   const { timeoutMs = 5000, headers = {} } = options;
+  const paymentHandler = options.paymentHandler;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const request: PaymentHttpRequest = {
+    url,
+    method: "DELETE",
+    headers,
+  };
 
-  try {
-    const response = await fetch(url, {
-      method: "DELETE",
-      headers: {
-        "Accept": "application/json",
-        ...headers,
-      },
-      signal: controller.signal,
-    });
+  const performFetch = async (): Promise<Result<Response, NetworkError>> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    clearTimeout(timeoutId);
+    try {
+      const response = await fetch(url, {
+        method: "DELETE",
+        headers: {
+          "Accept": "application/json",
+          ...headers,
+        },
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
+      clearTimeout(timeoutId);
+      return Result.ok(response);
+    } catch (err) {
+      clearTimeout(timeoutId);
+
+      if (err instanceof Error) {
+        if (err.name === "AbortError") {
+          return Result.err({
+            type: "timeout",
+            url,
+            ms: timeoutMs,
+          });
+        }
+
+        if (err.message.includes("ENOTFOUND") || err.message.includes("DNS")) {
+          const domain = new URL(url).hostname;
+          return Result.err({
+            type: "dns_failure",
+            domain,
+          });
+        }
+      }
+
       return Result.err({
-        type: "http_error",
+        type: "connection_refused",
         url,
-        status: response.status,
-        body,
       });
     }
+  };
 
-    // DELETE typically returns 204 No Content or 200 OK
-    // Consume the response body to prevent resource leaks
-    await response.text().catch(() => "");
+  const initial = await performFetch();
+  if (!initial.ok) return initial;
 
-    return Result.ok(undefined);
-  } catch (err) {
-    clearTimeout(timeoutId);
+  let response = initial.value;
 
-    if (err instanceof Error) {
-      if (err.name === "AbortError") {
-        return Result.err({
-          type: "timeout",
-          url,
-          ms: timeoutMs,
-        });
-      }
+  if (response.status === 402 && paymentHandler) {
+    await response.body?.cancel?.();
+    const handled = await paymentHandler.onPaymentRequired({
+      response,
+      retry: performFetch,
+      request,
+    });
+    if (!handled.ok) return handled;
+    response = handled.value;
+  }
 
-      if (err.message.includes("ENOTFOUND") || err.message.includes("DNS")) {
-        const domain = new URL(url).hostname;
-        return Result.err({
-          type: "dns_failure",
-          domain,
-        });
-      }
-    }
-
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
     return Result.err({
-      type: "connection_refused",
+      type: "http_error",
       url,
+      status: response.status,
+      body,
     });
   }
+
+  await response.text().catch(() => "");
+
+  return Result.ok(undefined);
 }
 
 // ============================================================================
